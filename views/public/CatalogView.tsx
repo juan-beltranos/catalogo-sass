@@ -1436,20 +1436,17 @@ const CatalogView: React.FC = () => {
 
                   <div className="p-3 sm:p-4 flex-1 flex flex-col">
                     <div className="flex flex-col gap-1">
-                      <div className="flex items-start justify-between gap-2">
-                        <h3 className="text-sm sm:text-[15px] font-extrabold text-gray-900">
+                      <div className="min-w-0">
+                        <h3 className="text-sm sm:text-[15px] font-extrabold text-gray-900 break-words">
                           {prod.name}
                         </h3>
-                        {prod.sku ? (
-                          <span className="hidden sm:inline-flex shrink-0 text-[10px] font-bold text-gray-500 bg-gray-100 border border-gray-200 rounded-full px-2 py-1">
-                            SKU: {prod.sku}
-                          </span>
-                        ) : null}
                       </div>
                       {prod.sku ? (
-                        <span className="sm:hidden inline-flex w-fit text-[10px] font-bold text-gray-500 bg-gray-100 border border-gray-200 rounded-full px-2 py-1">
-                          SKU: {prod.sku}
-                        </span>
+                        <div className="min-w-0 max-w-full">
+                          <span className="inline-block max-w-full text-[10px] leading-4 font-bold text-gray-500 bg-gray-100 border border-gray-200 rounded-lg px-2 py-1 break-all whitespace-normal">
+                            SKU: {prod.sku}
+                          </span>
+                        </div>
                       ) : null}
                     </div>
 

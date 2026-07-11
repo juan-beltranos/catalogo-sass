@@ -863,15 +863,37 @@ const applyServerConstraints = (builder: any, table: string, constraints: QueryC
 
 export const getDocs = async (ref: CollectionRef | QueryRef) => {
   const constraints = (ref as QueryRef).constraints ?? [];
-  let request = applyServerConstraints(
-    applyBaseFilters(supabase.from(ref.table).select("*"), ref),
-    ref.table,
-    constraints,
-  );
-  if (!constraints.some((item) => item.type === "limit")) request = request.limit(10000);
-  const { data, error } = await request;
-  if (error) throw error;
-  const appRows = await mapRowsToApp(ref, data ?? []);
+  const hasExplicitLimit = constraints.some((item) => item.type === "limit");
+  let rawRows: any[] = [];
+
+  if (hasExplicitLimit) {
+    const request = applyServerConstraints(
+      applyBaseFilters(supabase.from(ref.table).select("*"), ref),
+      ref.table,
+      constraints,
+    );
+    const { data, error } = await request;
+    if (error) throw error;
+    rawRows = data ?? [];
+  } else {
+    // Supabase/PostgREST suele limitar cada respuesta a 1.000 filas. Recorremos
+    // todas las páginas para que catálogos grandes no queden truncados.
+    const pageSize = 1000;
+    for (let from = 0; ; from += pageSize) {
+      const request = applyServerConstraints(
+        applyBaseFilters(supabase.from(ref.table).select("*"), ref),
+        ref.table,
+        constraints,
+      ).range(from, from + pageSize - 1);
+      const { data, error } = await request;
+      if (error) throw error;
+      const page = data ?? [];
+      rawRows.push(...page);
+      if (page.length < pageSize) break;
+    }
+  }
+
+  const appRows = await mapRowsToApp(ref, rawRows);
   const rows = applyClientConstraints(appRows, constraints);
   const docs = rows.map(
     (row: any) =>
@@ -1011,8 +1033,18 @@ export const deleteDoc = async (ref: DocRef) => {
 };
 
 export const getCountFromServer = async (ref: CollectionRef | QueryRef) => {
-  const snap = await getDocs(ref);
-  return { data: () => ({ count: snap.size }) };
+  const constraints = (ref as QueryRef).constraints ?? [];
+  const request = applyServerConstraints(
+    applyBaseFilters(
+      supabase.from(ref.table).select("id", { count: "exact", head: true }),
+      ref,
+    ),
+    ref.table,
+    constraints,
+  );
+  const { count, error } = await request;
+  if (error) throw error;
+  return { data: () => ({ count: count ?? 0 }) };
 };
 
 export const onSnapshot = (
