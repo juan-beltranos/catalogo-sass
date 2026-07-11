@@ -1,6 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
-import ws from "ws";
 
 type Env = Record<string, string | undefined>;
 
@@ -45,9 +44,6 @@ const getAdminClient = (env: Env) =>
       auth: {
         persistSession: false,
         autoRefreshToken: false,
-      },
-      realtime: {
-        transport: ws,
       },
     },
   );

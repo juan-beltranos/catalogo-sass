@@ -1,4 +1,4 @@
-import { buildCatalogShareHtml } from "../server/catalogShare";
+import { buildCatalogShareHtml } from "../server/catalogShare.js";
 
 export default async function handler(req: any, res: any) {
   try {
