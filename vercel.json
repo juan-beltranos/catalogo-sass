@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/c/:slug",
+      "destination": "/api/catalog-share?slug=:slug"
+    }
+  ]
+}

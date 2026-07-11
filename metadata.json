@@ -1,0 +1,5 @@
+{
+  "name": "Catalog SaaS MVP Structure",
+  "description": "Base structure for a SaaS catalog application with clear separation between Admin and Public views using a layout-centric architecture.",
+  "requestFramePermissions": []
+}
