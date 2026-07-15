@@ -27,6 +27,8 @@ import { MAX_VIDEO_MB, validateVideoFile } from "@/helpers/videoValidation";
 import Paginator from "@/components/catalog/Paginator";
 import { cldImg, deleteFromR2, uploadImagesToR2, uploadToR2 } from "@/helpers/r2Upload";
 import * as XLSX from "xlsx";
+import { getPlanLimitMessage } from "@/helpers/planLimits";
+import { useSubscriptionAccess } from "@/hooks/useSubscriptionAccess";
 
 import {
   DndContext,
@@ -211,11 +213,13 @@ const SortableProductRow: React.FC<SortableProductRowProps> = ({
 
 const ProductsView: React.FC = () => {
   const { user } = useAuth();
+  const planAccess = useSubscriptionAccess();
 
   const [storeId, setStoreId] = useState<string | null>(null);
   const [hasActiveSubscription, setHasActiveSubscription] = useState<boolean>(false);
 
   const [products, setProducts] = useState<Product[]>([]);
+  const [productCount, setProductCount] = useState(0);
   const [categories, setCategories] = useState<{ id: string; name: string; order?: number }[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -306,6 +310,15 @@ const ProductsView: React.FC = () => {
     prodsRefRef.current = r;
     return r;
   }, [storeId]);
+
+  useEffect(() => {
+    if (!prodsRef) return;
+    let active = true;
+    getCountFromServer(prodsRef)
+      .then((snapshot) => { if (active) setProductCount(snapshot.data().count); })
+      .catch((error) => console.error("Error contando productos:", error));
+    return () => { active = false; };
+  }, [prodsRef, products]);
 
   const mapDocToProduct = useCallback(
     (d: QueryDocumentSnapshot<DocumentData>): Product => {
@@ -893,7 +906,7 @@ const ProductsView: React.FC = () => {
       );
     } catch (error) {
       console.error("Error importando Excel:", error);
-      alert("No se pudo importar el Excel. Revisa que tenga el mismo formato exportado.");
+      alert(getPlanLimitMessage(error) || "No se pudo importar el Excel. Revisa que tenga el mismo formato exportado.");
     } finally {
       setImportingExcel(false);
     }
@@ -1161,6 +1174,11 @@ const ProductsView: React.FC = () => {
       setCreateVariants([]);
     } catch (err) {
       console.error(err);
+      const limitMessage = getPlanLimitMessage(err);
+      if (limitMessage) {
+        alert(limitMessage);
+        return;
+      }
       const message = err instanceof Error ? err.message : "Error al guardar producto";
       alert(`Error al guardar producto: ${message}`);
     } finally {
@@ -1455,7 +1473,7 @@ const ProductsView: React.FC = () => {
       alert(`Importación completada. Importados: ${imported}. Omitidos: ${skipped}.`);
     } catch (error) {
       console.error(error);
-      alert("Error importando el JSON.");
+      alert(getPlanLimitMessage(error) || "Error importando el JSON.");
     } finally {
       setIsSubmitting(false);
     }
@@ -1468,7 +1486,14 @@ const ProductsView: React.FC = () => {
   return (
     <div className="space-y-8">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold">Productos</h1>
+        <div>
+          <h1 className="text-2xl font-bold">Productos</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            {planAccess.productLimit === null
+              ? `${productCount} creados · Disponibles: ilimitados`
+              : `${productCount} de ${planAccess.productLimit} creados · ${Math.max(0, planAccess.productLimit - productCount)} disponibles`}
+          </p>
+        </div>
         {!hasActiveSubscription && (
           <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-xs px-3 py-1.5 rounded-lg">
             <i className="fa-solid fa-lock text-amber-500" />

@@ -13,6 +13,8 @@ type MenuItem = {
 type SidebarCustomProps = SidebarProps & {
   hasActiveSubscription?: boolean;
   hideSubscription?: boolean;
+  restrictedModules?: boolean;
+  tokenIntroActive?: boolean;
 };
 
 const SidebarItem: React.FC<SidebarItemProps & { disabled?: boolean }> = ({
@@ -55,6 +57,8 @@ const Sidebar: React.FC<SidebarCustomProps> = ({
   onNavigate,
   hasActiveSubscription = false,
   hideSubscription = false,
+  restrictedModules = false,
+  tokenIntroActive = false,
 }) => {
   const location = useLocation();
 
@@ -84,13 +88,13 @@ const Sidebar: React.FC<SidebarCustomProps> = ({
       to: '/admin/orders',
       icon: 'fa-cart-shopping',
       label: 'Pedidos',
-      disabled: !canUseAdmin,
+      disabled: !canUseAdmin || restrictedModules,
     },
     {
       to: '/admin/customers',
       icon: 'fa-users',
       label: 'Clientes',
-      disabled: !canUseAdmin,
+      disabled: !canUseAdmin || restrictedModules,
     },
     {
       to: '/admin/settings',
@@ -100,14 +104,18 @@ const Sidebar: React.FC<SidebarCustomProps> = ({
     },
   ];
 
-  // if (!hideSubscription) {
-  //   menuItems.splice(5, 0, {
-  //     to: '/admin/subscription',
-  //     icon: 'fa-credit-card',
-  //     label: 'Suscripción',
-  //     disabled: false,
-  //   });
-  // }
+  const visibleMenuItems = tokenIntroActive
+    ? menuItems.filter((item) => item.to !== '/admin/orders' && item.to !== '/admin/customers')
+    : menuItems;
+
+  if (!hideSubscription && !tokenIntroActive) {
+    visibleMenuItems.splice(5, 0, {
+      to: '/admin/subscription',
+      icon: 'fa-credit-card',
+      label: 'Suscripción',
+      disabled: false,
+    });
+  }
 
   const isLinkActive = (item: MenuItem) => {
     if (item.exact) return location.pathname === item.to;
@@ -135,7 +143,7 @@ const Sidebar: React.FC<SidebarCustomProps> = ({
           </p>
         </div>
 
-        {menuItems.map((item) => (
+        {visibleMenuItems.map((item) => (
           <SidebarItem
             key={item.to}
             to={item.to}

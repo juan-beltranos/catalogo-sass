@@ -19,6 +19,8 @@ import { Category } from "@/interfaces";
 import { useAuth } from "@/context/AuthContext";
 import Paginator from "@/components/catalog/Paginator";
 import { getCatalogShareUrl } from "@/helpers/catalogLinks";
+import { getPlanLimitMessage } from "@/helpers/planLimits";
+import { useSubscriptionAccess } from "@/hooks/useSubscriptionAccess";
 
 import {
   DndContext,
@@ -161,6 +163,7 @@ const SortableCategoryRow: React.FC<SortableCategoryRowProps> = ({
 
 const CategoriesView: React.FC = () => {
   const { user } = useAuth();
+  const planAccess = useSubscriptionAccess();
   const [storeId, setStoreId] = useState<string | null>(null);
   const [storeSlug, setStoreSlug] = useState<string>("");
 
@@ -402,7 +405,7 @@ const CategoriesView: React.FC = () => {
       setNewCategoryName("");
     } catch (err) {
       console.error(err);
-      setError("Error al guardar.");
+      setError(getPlanLimitMessage(err) || "Error al guardar.");
     } finally {
       setIsSubmitting(false);
     }
@@ -461,6 +464,11 @@ const CategoriesView: React.FC = () => {
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Categorías</h1>
         <p className="text-gray-500 mt-1">Organiza tus productos por grupos lógicos.</p>
+        <p className="text-sm text-gray-500 mt-1">
+          {planAccess.categoryLimit === null
+            ? `${categories.length} creadas · Disponibles: ilimitadas`
+            : `${categories.length} de ${planAccess.categoryLimit} creadas · ${Math.max(0, planAccess.categoryLimit - categories.length)} disponibles`}
+        </p>
         {storeId ? (
           <p className="text-xs text-gray-400 mt-1">Tienda activa: {storeId}</p>
         ) : null}

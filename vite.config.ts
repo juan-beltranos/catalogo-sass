@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react';
 import { DeleteObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { registerStore } from './server/registerStore';
 import { buildCatalogShareHtml } from './server/catalogShare';
+import activateSubscription from './api/activate-subscription';
 
 const readJsonBody = async (req: any) =>
   new Promise<Record<string, unknown>>((resolve, reject) => {
@@ -50,6 +51,13 @@ const getR2Client = (env: Record<string, string>) =>
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
+    // Las funciones /api usan process.env en produccion; se replica ese entorno en Vite local.
+    Object.assign(process.env, {
+      VITE_PUBLIC_SUPABASE_URL: env.VITE_PUBLIC_SUPABASE_URL,
+      VITE_SUPABASE_URL: env.VITE_SUPABASE_URL,
+      SUPABASE_SERVICE_ROLE_KEY: env.SUPABASE_SERVICE_ROLE_KEY,
+      MAKE_WEBHOOK_SECRET: env.MAKE_WEBHOOK_SECRET,
+    });
     return {
       server: {
         port: 3000,
@@ -76,6 +84,26 @@ export default defineConfig(({ mode }) => {
                   code: 'local_api_error',
                   message: error?.message || 'No se pudo crear la cuenta/tienda.',
                 }));
+              }
+            });
+
+            server.middlewares.use('/api/activate-subscription', async (req: any, res: any, next) => {
+              if (req.method !== 'POST') return next();
+              try {
+                req.body = await readJsonBody(req);
+                res.status = (statusCode: number) => {
+                  res.statusCode = statusCode;
+                  return res;
+                };
+                res.json = (payload: unknown) => {
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify(payload));
+                };
+                await activateSubscription(req, res);
+              } catch (error: any) {
+                res.statusCode = 500;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ ok: false, code: 'local_api_error', message: error?.message }));
               }
             });
 

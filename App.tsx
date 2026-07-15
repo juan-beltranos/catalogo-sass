@@ -18,6 +18,10 @@ import SettingsView from './views/admin/SettingsView';
 import SubscriptionView from './views/admin/SubscriptionView';
 import StoresView from './views/superadmin/StoresView';
 import SuperAdminRoute from './components/auth/SuperAdminRoute';
+import SubscriptionRoute from './components/auth/SubscriptionRoute';
+import SubscriptionRequiredView from './views/admin/SubscriptionRequiredView';
+import ModuleRoute from './components/auth/ModuleRoute';
+import SubscriptionOptionRoute from './components/auth/SubscriptionOptionRoute';
 
 const App: React.FC = () => {
   return (
@@ -37,14 +41,20 @@ const App: React.FC = () => {
 
           {/* Protected Admin Routes */}
           <Route path="/admin" element={<ProtectedRoute />}>
+            <Route path="subscription-required" element={<SubscriptionRequiredView />} />
             <Route element={<AdminLayout />}>
-              <Route index element={<DashboardView />} />
-              <Route path="products" element={<ProductsView />} />
-              <Route path="categories" element={<CategoriesView />} />
-              <Route path="orders" element={<OrdersView />} />
-              <Route path="customers" element={<CustomersView />} />
-              <Route path="subscription" element={<SubscriptionView />} />
-              <Route path="settings" element={<SettingsView />} />
+              {/* El pago siempre debe estar disponible, incluso con el plan vencido. */}
+              <Route path="subscription" element={<SubscriptionOptionRoute />} />
+              <Route element={<SubscriptionRoute />}>
+                <Route index element={<DashboardView />} />
+                <Route path="products" element={<ProductsView />} />
+                <Route path="categories" element={<CategoriesView />} />
+                <Route path="settings" element={<SettingsView />} />
+                <Route element={<ModuleRoute />}>
+                  <Route path="orders" element={<OrdersView />} />
+                  <Route path="customers" element={<CustomersView />} />
+                </Route>
+              </Route>
             </Route>
           </Route>
 

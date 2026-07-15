@@ -12,6 +12,7 @@ import {
 import { db } from '@/lib/supabase';
 import { getStoreForOwner, invalidateStoreForOwner } from "@/lib/storeLookup";
 import { useAuth } from '../../context/AuthContext';
+import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
 
 type FirestoreTimestampLike = {
     seconds?: number;
@@ -37,7 +38,7 @@ type StoreInfo = {
     trialEndsAtMs?: number | null;
 };
 
-const WOMPI_PAYMENT_URL = 'https://checkout.wompi.co/l/XqPioh';
+const LOCAL_GO_PAYMENT_URL = import.meta.env.VITE_LOCAL_GO_PAYMENT_URL || '';
 
 const parseDate = (
     value?: string | number | Date | FirestoreTimestampLike | null
@@ -107,6 +108,7 @@ const isTrialExpired = (store?: StoreInfo | null) => {
 
 const SubscriptionView: React.FC = () => {
     const { user } = useAuth();
+    const subscriptionAccess = useSubscriptionAccess();
 
     const [storeInfo, setStoreInfo] = useState<StoreInfo | null>(null);
     const [loading, setLoading] = useState(true);
@@ -167,6 +169,14 @@ const SubscriptionView: React.FC = () => {
                             : null,
                 };
 
+                loadedStore.hasActiveSubscription = subscriptionAccess.allowed;
+                loadedStore.subscriptionStatus = subscriptionAccess.status;
+                loadedStore.subscriptionEndAt = subscriptionAccess.endAt;
+                loadedStore.hasFreeTrial = subscriptionAccess.status === 'trial';
+                loadedStore.trialEndsAt = subscriptionAccess.status === 'trial' ? subscriptionAccess.endAt : null;
+                loadedStore.trialEndsAtMs = loadedStore.trialEndsAt ? Date.parse(String(loadedStore.trialEndsAt)) : null;
+                loadedStore.freeTrialStatus = subscriptionAccess.status === 'trial' && subscriptionAccess.allowed ? 'active' : null;
+
                 const trialExpired = isTrialExpired(loadedStore);
 
                 if (
@@ -201,7 +211,7 @@ const SubscriptionView: React.FC = () => {
         return () => {
             isMounted = false;
         };
-    }, [user?.uid]);
+    }, [user?.uid, subscriptionAccess.allowed, subscriptionAccess.status, subscriptionAccess.endAt]);
 
     const registeredEmail = user?.email || '';
 
@@ -365,16 +375,20 @@ const SubscriptionView: React.FC = () => {
         }
     };
 
-    const handleOpenWompi = () => {
+    const handleOpenLocalGo = () => {
         if (!registeredEmail) {
             alert('No se encontró el correo del usuario autenticado.');
             return;
         }
 
-        window.open(WOMPI_PAYMENT_URL, '_blank', 'noopener,noreferrer');
+        if (!LOCAL_GO_PAYMENT_URL) {
+            alert('Falta configurar el enlace de pago de Local Go.');
+            return;
+        }
+        window.open(LOCAL_GO_PAYMENT_URL, '_blank', 'noopener,noreferrer');
     };
 
-    if (loading) {
+    if (loading || subscriptionAccess.loading) {
         return (
             <div className="bg-white rounded-2xl border p-8 text-center text-gray-500">
                 Cargando suscripción...
@@ -462,7 +476,7 @@ const SubscriptionView: React.FC = () => {
                 <h2 className="text-xl font-bold text-gray-900">Pago de suscripción</h2>
                 <p className="text-sm text-gray-500 mt-1">
                     Antes de ir a pagar, copia el correo con el que registraste tu tienda y pégalo en la
-                    pasarela externa de Wompi.
+                    pasarela externa de Local Go.
                 </p>
 
                 <div className="mt-5 rounded-xl border bg-gray-50 p-4">
@@ -486,16 +500,16 @@ const SubscriptionView: React.FC = () => {
 
                     <button
                         type="button"
-                        onClick={handleOpenWompi}
+                        onClick={handleOpenLocalGo}
                         className="px-4 py-3 rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition-colors"
                     >
                         <i className="fa-solid fa-arrow-up-right-from-square mr-2" />
-                        Ir a pagar con Wompi
+                        Ir a pagar con Local Go
                     </button>
                 </div>
 
                 <div className="mt-6 rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-800">
-                    Al hacer clic en <b>Ir a pagar con Wompi</b> se abrirá una pasarela de pago externa.
+                    Al hacer clic en <b>Ir a pagar con Local Go</b> se abrirá una pasarela de pago externa.
                     Vas a salir temporalmente de nuestro sistema para completar el pago.
                 </div>
             </div>

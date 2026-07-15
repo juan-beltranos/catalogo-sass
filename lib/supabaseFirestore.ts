@@ -101,11 +101,12 @@ const dbStoreToApp = async (row: any) => {
     .eq("store_id", row.id)
     .maybeSingle();
 
-  const subscriptionEnd = subscription?.current_period_ends_at ?? null;
-  const trialEndsAt = subscription?.trial_ends_at ?? null;
+  const subscriptionEnd = subscription?.subscription_end_at ?? subscription?.current_period_ends_at ?? null;
+  const trialEndsAt = subscription?.subscription_status === "trial"
+    ? subscriptionEnd : subscription?.trial_ends_at ?? null;
   const hasActiveSubscription =
-    subscription?.status === "active" ||
-    (subscription?.status === "trialing" && (!trialEndsAt || Date.now() <= Date.parse(trialEndsAt)));
+    (subscription?.subscription_status === "active" || subscription?.subscription_status === "trial") &&
+    Boolean(subscriptionEnd) && Date.now() <= Date.parse(subscriptionEnd);
 
   return {
     ...row,
@@ -125,14 +126,14 @@ const dbStoreToApp = async (row: any) => {
     shippingHidePrices: shipping.hidePrices ?? false,
     checkoutFields: row.checkout_fields ?? [],
     hasActiveSubscription,
-    subscriptionStatus: subscription?.status ?? "inactive",
-    subscriptionType: subscription?.status === "trialing" ? "free_trial" : "subscription",
+    subscriptionStatus: subscription?.subscription_status ?? subscription?.status ?? "inactive",
+    subscriptionType: subscription?.subscription_status === "trial" ? "free_trial" : "subscription",
     subscriptionEndAt: subscriptionEnd,
     subscriptionEndsAt: subscriptionEnd,
     trialEndsAt,
     trialEndsAtMs: trialEndsAt ? Date.parse(trialEndsAt) : null,
-    hasFreeTrial: subscription?.status === "trialing",
-    freeTrialStatus: subscription?.status === "trialing" ? "active" : null,
+    hasFreeTrial: subscription?.subscription_status === "trial",
+    freeTrialStatus: subscription?.subscription_status === "trial" ? "active" : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

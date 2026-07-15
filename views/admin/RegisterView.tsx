@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from "react";
 import { signInWithEmailAndPassword } from "@/lib/supabaseAuth";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { auth } from "@/lib/supabase";
 import { useAuth } from "../../context/AuthContext";
 import { buildInternationalPhone, getLatamCountry, LATAM_COUNTRIES, onlyPhoneDigits } from "@/helpers/latamCountries";
@@ -15,16 +15,11 @@ function slugify(input: string) {
         .replace(/(^-|-$)+/g, "");
 }
 
-function getUrlParam(paramName: string) {
-    const normalParams = new URLSearchParams(window.location.search);
-    const normalValue = normalParams.get(paramName);
-    if (normalValue) return normalValue;
-
-    const hash = window.location.hash;
-    const queryString = hash.includes("?") ? hash.split("?")[1] : "";
-    const hashParams = new URLSearchParams(queryString);
-    return hashParams.get(paramName) || "";
-}
+const TOKEN_PLANS: Record<string, "Basic" | "Pro" | "Premium"> = {
+    "basic-ssdfg-123654-asadfsf-987878": "Basic",
+    "pro-hjklo-456789-qwerty-123456": "Pro",
+    "premium-zxcvb-987654-asdfgh-456789": "Premium",
+};
 
 const businessTypes = [
     "Ropa",
@@ -101,10 +96,15 @@ const businessTypes = [
 
 const RegisterView: React.FC = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const { user, loading: authLoading } = useAuth();
 
-    const source = useMemo(() => getUrlParam("source").trim().toLowerCase(), []);
-    const isClientSource = source === "client";
+    // HashRouter entrega aqui la query ubicada despues de #/admin/register.
+    const params = useMemo(() => new URLSearchParams(location.search), [location.search]);
+    const source = (params.get("source") || "").trim().toLowerCase();
+    const token = (params.get("token") || "").trim();
+    const tokenPlan = TOKEN_PLANS[token] || null;
+    const hasTokenParameter = params.has("token") && token.length > 0;
 
     const [adminName, setAdminName] = useState("");
     const [email, setEmail] = useState("");
@@ -172,6 +172,7 @@ const RegisterView: React.FC = () => {
                     whatsapp: cleanWhatsapp,
                     address: address.trim() || "",
                     source: source || "direct",
+                    token,
                 }),
             });
 
@@ -244,11 +245,19 @@ const RegisterView: React.FC = () => {
                 <h1 className="text-2xl font-bold">Crear cuenta</h1>
                 <p className="text-gray-500 mt-1">Admin + datos del negocio</p>
 
-                {isClientSource ? (
+                {tokenPlan ? (
+                    <div className="mt-4 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-lg p-3 text-sm">
+                        Registro con plan {tokenPlan}.
+                    </div>
+                ) : hasTokenParameter ? (
+                    <div className="mt-4 bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm">
+                        El enlace o token de registro no es valido.
+                    </div>
+                ) : (
                     <div className="mt-4 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-lg p-3 text-sm">
                         Tu registro incluye 7 dias gratis.
                     </div>
-                ) : null}
+                )}
 
                 <form onSubmit={handleRegister} className="mt-6 space-y-6">
                     <section className="space-y-4">

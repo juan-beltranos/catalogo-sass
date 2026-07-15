@@ -17,6 +17,7 @@ import { getStoreForOwner, invalidateStoreForOwner } from "@/lib/storeLookup";
 import { useAuth } from '../../context/AuthContext';
 import Sidebar from '../admin/Sidebar';
 import { getCatalogSharePath } from '@/helpers/catalogLinks';
+import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
 
 type StoreInfo = {
   id: string;
@@ -73,25 +74,14 @@ const AdminLayout: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const subscriptionAccess = useSubscriptionAccess();
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [storeInfo, setStoreInfo] = useState<StoreInfo | null>(null);
   const [loadingStore, setLoadingStore] = useState(true);
 
-  const LEGACY_OWNER_UIDS_WITHOUT_SUBSCRIPTION_MODULE = [
-    //'ywTJNN2V8ucSfCeAb3zSoJC9AzF2', inteliasb
-    'cNATkr3aNUVv1ZXPFg43j6mIJy93',
-    'ubECmtL6btNLlayuST5AyR0nmQj2',
-    '61FsuSIn0catuNBeem5X5HNxQJ33',
-    'bzigS1T3bZbe0XS2gKmpSL3Vxx72',
-    'bw1ha8MzuPZrxjZfXWqbyoCEo532',
-  ];
-
-  const hideSubscriptionModule = useMemo(() => {
-    if (!user?.uid) return false;
-
-    return LEGACY_OWNER_UIDS_WITHOUT_SUBSCRIPTION_MODULE.includes(user.uid);
-  }, [user?.uid]);
+  // El módulo de pago permanece visible para todos, incluidos usuarios legacy.
+  const hideSubscriptionModule = false;
 
   useEffect(() => {
     let isMounted = true;
@@ -222,68 +212,18 @@ const AdminLayout: React.FC = () => {
     };
   }, [user?.uid]);
 
-  const hasAdminAccess = useMemo(() => {
-    if (!storeInfo) return false;
-
-    /**
-     * Compatibilidad para clientes antiguos.
-     *
-     * Tus clientes viejos tienen algo como:
-     * subscriptionType: "one_time"
-     *
-     * Pero no tienen:
-     * source
-     * subscriptionStatus
-     * hasFreeTrial
-     * trialEndsAtMs
-     *
-     * Entonces los dejamos entrar normal para no afectar tiendas antiguas.
-     */
-    const isLegacyOneTimeClient =
-      storeInfo.subscriptionType === 'one_time' &&
-      !storeInfo.source &&
-      !storeInfo.subscriptionStatus &&
-      storeInfo.hasFreeTrial !== true &&
-      !storeInfo.trialEndsAtMs;
-
-    if (isLegacyOneTimeClient) {
-      return true;
-    }
-
-    const trialExpired =
-      storeInfo.hasFreeTrial === true &&
-      typeof storeInfo.trialEndsAtMs === 'number' &&
-      Date.now() > storeInfo.trialEndsAtMs;
-
-    if (trialExpired) {
-      return false;
-    }
-
-    const subscriptionEndMs =
-      getDateMs(storeInfo.subscriptionEndAt) ??
-      getDateMs(storeInfo.subscriptionEndsAt);
-
-    const subscriptionExpired =
-      storeInfo.hasActiveSubscription === true &&
-      subscriptionEndMs !== null &&
-      Date.now() > subscriptionEndMs;
-
-    if (subscriptionExpired) {
-      return false;
-    }
-
-    return storeInfo.hasActiveSubscription === true;
-  }, [storeInfo]);
+  // La tabla subscriptions es la fuente canonica que actualiza el webhook de pago.
+  const hasAdminAccess = subscriptionAccess.allowed;
 
   useEffect(() => {
-    if (loadingStore) return;
+    if (loadingStore || subscriptionAccess.loading) return;
 
     const isSubscriptionPage = location.pathname === '/admin/subscription';
 
     if (!hasAdminAccess && !isSubscriptionPage) {
       navigate('/admin/subscription', { replace: true });
     }
-  }, [loadingStore, hasAdminAccess, location.pathname, navigate]);
+  }, [loadingStore, subscriptionAccess.loading, hasAdminAccess, location.pathname, navigate]);
 
   const handleLogout = async () => {
     try {
@@ -389,6 +329,8 @@ const AdminLayout: React.FC = () => {
             onNavigate={() => setMobileMenuOpen(false)}
             hasActiveSubscription={hasAdminAccess}
             hideSubscription={hideSubscriptionModule}
+            restrictedModules={subscriptionAccess.restrictedModules}
+            tokenIntroActive={subscriptionAccess.tokenIntroActive}
           />
         </aside>
 
@@ -431,6 +373,8 @@ const AdminLayout: React.FC = () => {
               onNavigate={() => setMobileMenuOpen(false)}
               hasActiveSubscription={hasAdminAccess}
               hideSubscription={hideSubscriptionModule}
+              restrictedModules={subscriptionAccess.restrictedModules}
+              tokenIntroActive={subscriptionAccess.tokenIntroActive}
             />
           </div>
         </div>

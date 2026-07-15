@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
+import ws from "ws";
 
 type Env = Record<string, string | undefined>;
 
@@ -20,10 +21,11 @@ export type RegisterStoreInput = {
   whatsapp?: unknown;
   address?: unknown;
   source?: unknown;
+  token?: unknown;
 };
 
 export type RegisterStoreResult =
-  | { ok: true; userId: string; storeId: string }
+  | { ok: true; userId: string; storeId: string; plan: string; registrationType: "trial" | "token" }
   | { ok: false; status: number; code: string; message: string };
 
 const required = (env: Env, name: string) => {
@@ -45,6 +47,7 @@ const getAdminClient = (env: Env) =>
         persistSession: false,
         autoRefreshToken: false,
       },
+      realtime: { transport: ws as any },
     },
   );
 
@@ -130,6 +133,17 @@ export async function registerStore(input: RegisterStoreInput, env: Env): Promis
     const countryCode = String(input.countryCode || "CO").trim().toUpperCase();
     const whatsapp = String(input.whatsapp || "").replace(/\D/g, "");
     const address = String(input.address || "").trim();
+    const token = String(input.token || "").trim();
+    const tokenPlans: Record<string, "basic" | "pro" | "premium"> = {
+      "basic-ssdfg-123654-asadfsf-987878": "basic",
+      "pro-hjklo-456789-qwerty-123456": "pro",
+      "premium-zxcvb-987654-asdfgh-456789": "premium",
+    };
+    const tokenWasProvided = token.length > 0;
+    const plan = tokenWasProvided ? tokenPlans[token] : "trial";
+    if (tokenWasProvided && !plan) {
+      return validationError("invalid_registration_token", "El enlace o token de registro no es valido.");
+    }
 
     if (!adminName) return validationError("missing_admin_name", "Escribe tu nombre.");
     if (!email) return validationError("missing_email", "Escribe tu email.");
@@ -189,9 +203,13 @@ export async function registerStore(input: RegisterStoreInput, env: Env): Promis
 
     const { error: subscriptionError } = await supabase.from("subscriptions").insert({
       store_id: store.id,
-      status: "active",
-      trial_ends_at: null,
-      current_period_ends_at: null,
+      subscription_status: tokenWasProvided ? "active" : "trial",
+      plan,
+      registration_type: tokenWasProvided ? "token" : "trial",
+      trial_start_at: now.toISOString(),
+      subscription_end_at: tokenWasProvided
+        ? "9999-12-31T23:59:59.999Z"
+        : new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       created_at: now.toISOString(),
       updated_at: now.toISOString(),
     });
@@ -201,6 +219,8 @@ export async function registerStore(input: RegisterStoreInput, env: Env): Promis
       ok: true,
       userId: createdUserId,
       storeId: store.id,
+      plan,
+      registrationType: tokenWasProvided ? "token" : "trial",
     };
   } catch (error: any) {
     console.error("Error creando registro:", error);
