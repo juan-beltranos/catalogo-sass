@@ -8,7 +8,7 @@ import {
     updateDoc,
     where,
 } from "@/lib/supabaseFirestore";
-import { db } from "@/lib/supabase";
+import { db, supabase } from "@/lib/supabase";
 import { getStoreForOwner, invalidateStoreForOwner } from "@/lib/storeLookup";
 import { useAuth } from "../../context/AuthContext";
 import { Store } from "@/interfaces";
@@ -172,8 +172,8 @@ const SettingsView: React.FC = () => {
             const optimized = await compressImageFile(logoFile, { maxSizeMB: 0.35, maxWidthOrHeight: 800 });
             const path = `stores/${store.id}/logo/${Date.now()}_${optimized.name}`;
             const storageRef = ref(storage, path);
-            await uploadBytes(storageRef, optimized);
-            const url = await getDownloadURL(storageRef);
+            const uploaded = await uploadBytes(storageRef, optimized);
+            const url = await getDownloadURL(storageRef, uploaded.url);
 
             if (store.logoPath) {
                 try {
@@ -197,8 +197,8 @@ const SettingsView: React.FC = () => {
             const optimized = await compressImageFile(bannerFile, { maxSizeMB: 0.7, maxWidthOrHeight: 1600 });
             const path = `stores/${store.id}/banner/${Date.now()}_${optimized.name}`;
             const storageRef = ref(storage, path);
-            await uploadBytes(storageRef, optimized);
-            const url = await getDownloadURL(storageRef);
+            const uploaded = await uploadBytes(storageRef, optimized);
+            const url = await getDownloadURL(storageRef, uploaded.url);
 
             // borrar banner anterior si existe
             const currentBannerPath = (store as any).bannerPath;
@@ -326,7 +326,7 @@ const SettingsView: React.FC = () => {
                 if (uploaded) bannerPayload = uploaded;
             }
 
-            await updateDoc(doc(db, "stores", store.id), {
+            const storeChanges = {
                 name: name.trim(),
                 slug: cleanSlug,
                 description: description.trim(),
@@ -350,7 +350,53 @@ const SettingsView: React.FC = () => {
                 ...logoPayload,
                 ...bannerPayload,
                 updatedAt: new Date(),
-            });
+            };
+
+            try {
+                await updateDoc(doc(db, "stores", store.id), storeChanges);
+            } catch (directError: any) {
+                if (!String(directError?.message || directError?.details || "").includes("Failed to fetch")) {
+                    throw directError;
+                }
+
+                const { data: sessionData } = await supabase.auth.getSession();
+                const token = sessionData.session?.access_token;
+                const dbChanges = {
+                    name: storeChanges.name,
+                    slug: storeChanges.slug,
+                    description: storeChanges.description,
+                    whatsapp: storeChanges.whatsapp,
+                    status: storeChanges.isActive ? "active" : "inactive",
+                    brand_color: storeChanges.brandColor,
+                    logo_url: logoPayload.logoUrl,
+                    banner_url: bannerPayload.bannerUrl,
+                    instagram: storeChanges.instagram,
+                    facebook: storeChanges.facebook,
+                    contact_email: storeChanges.email,
+                    phone: storeChanges.phone,
+                    location: storeChanges.location,
+                    shipping_settings: {
+                        enabled: storeChanges.shippingEnabled,
+                        methods: storeChanges.shippingMethods,
+                        costCOD: storeChanges.shippingCostCOD,
+                        costCarrier: storeChanges.shippingCostCarrier,
+                        note: storeChanges.shippingNote,
+                        hidePrices: storeChanges.shippingHidePrices,
+                    },
+                    checkout_fields: storeChanges.checkoutFields,
+                    updated_at: new Date().toISOString(),
+                };
+                const response = await fetch("/api/store-settings", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${token || ""}`,
+                    },
+                    body: JSON.stringify({ storeId: store.id, changes: dbChanges }),
+                });
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(result.error || "No se pudo guardar la tienda.");
+            }
             invalidateStoreForOwner(user?.uid);
 
             alert("Configuración guardada ✅");
@@ -370,9 +416,14 @@ const SettingsView: React.FC = () => {
             setLogoFile(null);
             setBannerFile(null);
 
-        } catch (e) {
+        } catch (e: any) {
             console.error(e);
-            setError("No se pudo guardar la configuración.");
+            const detail = String(e?.message || e?.details || "").trim();
+            setError(
+                detail
+                    ? `No se pudo guardar la configuración: ${detail}`
+                    : "No se pudo guardar la configuración.",
+            );
         } finally {
             setSaving(false);
         }

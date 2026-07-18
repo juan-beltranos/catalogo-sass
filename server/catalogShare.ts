@@ -11,6 +11,16 @@ const envValue = (env: Env, ...names: string[]) => {
   return "";
 };
 
+const validHttpUrl = (value: string) => {
+  const clean = value.trim().replace(/^["']|["']$/g, "");
+  try {
+    const parsed = new URL(clean);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.origin : "";
+  } catch {
+    return "";
+  }
+};
+
 const escapeHtml = (value: string) =>
   value
     .replace(/&/g, "&amp;")
@@ -26,7 +36,13 @@ const absoluteUrl = (url: string | null | undefined, origin: string) => {
 };
 
 const getSupabase = (env: Env) => {
-  const url = envValue(env, "SUPABASE_URL", "VITE_SUPABASE_URL", "VITE_PUBLIC_SUPABASE_URL");
+  // Algunos entornos conservan variables antiguas vacias o mal formadas.
+  // Elegimos la primera URL realmente valida, priorizando la usada por el navegador.
+  const url = [
+    env.VITE_PUBLIC_SUPABASE_URL,
+    env.VITE_SUPABASE_URL,
+    env.SUPABASE_URL,
+  ].map((value) => validHttpUrl(value || "")).find(Boolean) || "";
   const key = envValue(
     env,
     "SUPABASE_SERVICE_ROLE_KEY",

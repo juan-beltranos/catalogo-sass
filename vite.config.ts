@@ -5,6 +5,7 @@ import { DeleteObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client
 import { registerStore } from './server/registerStore';
 import { buildCatalogShareHtml } from './server/catalogShare';
 import activateSubscription from './api/activate-subscription';
+import { updateStoreSettings } from './server/updateStoreSettings';
 
 const readJsonBody = async (req: any) =>
   new Promise<Record<string, unknown>>((resolve, reject) => {
@@ -104,6 +105,24 @@ export default defineConfig(({ mode }) => {
                 res.statusCode = 500;
                 res.setHeader('Content-Type', 'application/json');
                 res.end(JSON.stringify({ ok: false, code: 'local_api_error', message: error?.message }));
+              }
+            });
+
+            server.middlewares.use('/api/store-settings', async (req, res, next) => {
+              if (req.method !== 'POST') return next();
+              try {
+                const result = await updateStoreSettings(
+                  await readJsonBody(req),
+                  req.headers.authorization,
+                  env,
+                );
+                res.statusCode = result.status;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify(result));
+              } catch (error: any) {
+                res.statusCode = 500;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ ok: false, error: error?.message }));
               }
             });
 

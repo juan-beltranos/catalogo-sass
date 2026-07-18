@@ -19,7 +19,13 @@ export const uploadBytes = async (
   });
 };
 
-export const getDownloadURL = async (storageRef: { path: string }) => {
+export const getDownloadURL = async (
+  storageRef: { path: string },
+  uploadedUrl?: string,
+) => {
+  // La API conoce la URL publica real del objeto. Preferirla evita depender
+  // de que VITE_R2_PUBLIC_BASE_URL coincida exactamente en produccion.
+  if (uploadedUrl) return uploadedUrl;
   const publicBaseUrl = import.meta.env.VITE_R2_PUBLIC_BASE_URL || "";
   if (!publicBaseUrl) return storageRef.path;
   return `${publicBaseUrl.replace(/\/+$/, "")}/${storageRef.path.replace(/^\/+/, "")}`;
