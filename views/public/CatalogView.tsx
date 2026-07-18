@@ -22,7 +22,7 @@ import {
   runTransaction,
   increment,
 } from "@/lib/supabaseFirestore";
-import { db } from "@/lib/supabase";
+import { db, supabase } from "@/lib/supabase";
 import { Product, Store } from "@/interfaces";
 import { CartItem, Category, Variant } from "@/types";
 import {
@@ -510,24 +510,19 @@ const CatalogView: React.FC = () => {
       setQueryError(null);
 
       try {
-        const qStore = query(
-          collection(db, "stores"),
-          where("slug", "==", slug),
-          limit(1),
-        );
+        const { data, error } = await supabase.rpc("get_public_catalog_store", {
+          p_slug: slug,
+        });
+        if (error) throw error;
 
-        const snap = await getDocs(qStore);
-
-        if (snap.empty) {
+        if (!data) {
           setStore(null);
           setCatalogUnavailableReason("not_found");
           setLoading(false);
           return;
         }
 
-        const storeDoc = snap.docs[0];
-        const data = storeDoc.data() as any;
-        const s: Store = { id: storeDoc.id, ...(data as any) };
+        const s = data as Store;
         const unavailableReason = getCatalogUnavailableReason(s);
 
         setStore(s);
