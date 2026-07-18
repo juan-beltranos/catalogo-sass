@@ -6,6 +6,7 @@ import { registerStore } from './server/registerStore';
 import { buildCatalogShareHtml } from './server/catalogShare';
 import activateSubscription from './api/activate-subscription';
 import { updateStoreSettings } from './server/updateStoreSettings';
+import { createPublicOrder, updateOrderStatus } from './server/orderActions';
 
 const readJsonBody = async (req: any) =>
   new Promise<Record<string, unknown>>((resolve, reject) => {
@@ -124,6 +125,22 @@ export default defineConfig(({ mode }) => {
                 res.setHeader('Content-Type', 'application/json');
                 res.end(JSON.stringify({ ok: false, error: error?.message }));
               }
+            });
+
+            server.middlewares.use('/api/public-order', async (req, res, next) => {
+              if (req.method !== 'POST') return next();
+              const result = await createPublicOrder(await readJsonBody(req), env);
+              res.statusCode = result.status;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify(result));
+            });
+
+            server.middlewares.use('/api/order-status', async (req, res, next) => {
+              if (req.method !== 'POST') return next();
+              const result = await updateOrderStatus(await readJsonBody(req), req.headers.authorization, env);
+              res.statusCode = result.status;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify(result));
             });
 
             server.middlewares.use('/api/r2-upload', async (req, res, next) => {

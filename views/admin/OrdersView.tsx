@@ -16,7 +16,7 @@ import {
   endBefore,
   limitToLast,
 } from "@/lib/supabaseFirestore";
-import { db } from "@/lib/supabase";
+import { db, supabase } from "@/lib/supabase";
 import { getStoreForOwner } from "@/lib/storeLookup";
 import { useAuth } from "../../context/AuthContext";
 import { Order, OrderItem, OrderStatus } from "@/types";
@@ -142,10 +142,17 @@ const OrdersView: React.FC = () => {
     setSelectedOrder((current) => (current?.id === orderId ? patchOrder(current) : current));
 
     try {
-      await updateDoc(doc(db, "stores", storeId, "orders", orderId), {
-        status: newStatus,
-        updatedAt,
+      const { data: sessionData } = await supabase.auth.getSession();
+      const response = await fetch("/api/order-status", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${sessionData.session?.access_token || ""}`,
+        },
+        body: JSON.stringify({ storeId, orderId, status: newStatus }),
       });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "No se pudo actualizar el estado.");
     } catch (error) {
       console.error("Error updating status:", error);
       setOrders(previousOrders);

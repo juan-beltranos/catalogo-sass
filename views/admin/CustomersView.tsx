@@ -72,6 +72,7 @@ const CustomersView: React.FC = () => {
 
           return {
             id: d.id,
+            uuid: x.uuid,
             rawPhone,
             name: x.name ?? "Cliente",
             phone,
@@ -138,6 +139,19 @@ const CustomersView: React.FC = () => {
 
     try {
       const ordersCol = collection(db, "stores", storeId, "orders");
+
+      const clientUuid = String((client as any).uuid || "");
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clientUuid)) {
+        const linkedSnap = await getDocs(query(
+          ordersCol,
+          where("clientId", "==", clientUuid),
+          orderBy("createdAt", "desc"),
+        ));
+        if (!linkedSnap.empty) {
+          setClientOrders(linkedSnap.docs.map(mapOrderDocToOrder));
+          return;
+        }
+      }
 
       // ✅ 1) intento principal: clientId
       let q1 = query(

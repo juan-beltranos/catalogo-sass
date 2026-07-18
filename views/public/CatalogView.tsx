@@ -904,7 +904,9 @@ const CatalogView: React.FC = () => {
       const clientRef = doc(db, "stores", store.id, "clients", cleanPhone);
       const orderRef = doc(collection(db, "stores", store.id, "orders"));
 
-      await runTransaction(db, async (tx) => {
+      // Las escrituras públicas pasan por el backend del mismo dominio.
+      // Se conserva la transacción anterior como referencia, pero no se ejecuta.
+      if (false) await runTransaction(db, async (tx) => {
         const productSnaps = resolvedProducts.map((entry) => entry!);
 
         const clientSnap = await tx.get(clientRef);
@@ -986,6 +988,28 @@ const CatalogView: React.FC = () => {
           updatedAt: serverTimestamp(),
         });
       });
+
+      const orderPayload = {
+        id: orderRef.id,
+        customer: { name: cleanName, phone: cleanPhone, address: cleanAddress },
+        customFields,
+        notes: customerNotes.trim() || "",
+        customerType: isWholesaleCatalog ? "wholesale" : "retail",
+        items,
+        subtotal,
+        shippingMethod: selectedShipping ?? null,
+        shippingCost,
+        total: orderTotal,
+      };
+      const orderResponse = await fetch("/api/public-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storeId: store.id, order: orderPayload }),
+      });
+      const orderResult = await orderResponse.json().catch(() => ({}));
+      if (!orderResponse.ok) {
+        throw new Error(orderResult.error || "No se pudo registrar el pedido.");
+      }
 
       // Mensaje de WhatsApp
       const lines: string[] = [];
