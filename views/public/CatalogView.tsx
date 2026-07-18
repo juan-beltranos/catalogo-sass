@@ -33,7 +33,7 @@ import {
   getProductMainImage,
   norm,
 } from "@/helpers";
-import { buildInternationalPhone, formatStoreCurrency } from "@/helpers/latamCountries";
+import { buildInternationalPhone, formatStoreCurrency, resolveStoreCountryCode } from "@/helpers/latamCountries";
 import { ImageCarousel } from "@/components/catalog/ImageCarousel";
 import { cldImg } from "@/helpers/r2Upload";
 import {
@@ -321,7 +321,7 @@ const CatalogView: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [store, setStore] = useState<Store | null>(null);
-  const countryCode = (store as any)?.countryCode || "CO";
+  const countryCode = resolveStoreCountryCode((store as any)?.countryCode, store?.whatsapp);
   const formatCOP = (value: number) => formatStoreCurrency(value, countryCode);
   const [catalogUnavailableReason, setCatalogUnavailableReason] =
     useState<CatalogUnavailableReason | null>(null);

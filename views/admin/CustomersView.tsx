@@ -67,10 +67,12 @@ const CustomersView: React.FC = () => {
       (snapshot) => {
         const data: Client[] = snapshot.docs.map((d) => {
           const x = d.data() as any;
-          const phone = normalizePhone(x.phone ?? d.id);
+          const rawPhone = normalizePhone(x.phone ?? d.id);
+          const phone = phoneForWhatsApp(rawPhone);
 
           return {
             id: d.id,
+            rawPhone,
             name: x.name ?? "Cliente",
             phone,
             address: x.address ?? "",
@@ -131,6 +133,7 @@ const CustomersView: React.FC = () => {
     setClientOrders([]);
 
     const phone = normalizePhone(client.phone);
+    const rawPhone = normalizePhone((client as any).rawPhone || client.phone);
     const internationalPhone = phoneForWhatsApp(phone);
 
     try {
@@ -155,7 +158,7 @@ const CustomersView: React.FC = () => {
       // ✅ 2) fallback: customer.phone (por si antes no guardabas clientId)
       const q2 = query(
         ordersCol,
-        where("customerPhone", "==", phone),
+        where("customerPhone", "==", rawPhone),
         orderBy("createdAt", "desc")
       );
 

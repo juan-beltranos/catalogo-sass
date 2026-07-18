@@ -788,6 +788,9 @@ export const collection = (_db: unknown, ...segments: any[]): CollectionRef => {
 export const doc = (...args: any[]): DocRef => {
   const start = args[0]?.kind === "collection" ? 0 : 1;
   const path = normalizeArgs(args.slice(start));
+  if (args.length === 1 && args[0]?.kind === "collection" && path.length % 2 === 1) {
+    path.push(randomId());
+  }
   const id = path.length % 2 === 0 ? path[path.length - 1] : undefined;
   const collectionPath = id ? path.slice(0, -1) : path;
   return { kind: "doc", path, id, table: tableForPath(collectionPath), storeId: storeIdForPath(collectionPath) };

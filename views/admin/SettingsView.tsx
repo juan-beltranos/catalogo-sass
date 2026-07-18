@@ -16,7 +16,7 @@ import { slugify } from "@/helpers";
 import { compressImageFile } from "@/helpers/imageCompression";
 import { getCatalogShareUrl } from "@/helpers/catalogLinks";
 import { ref, uploadBytes, getDownloadURL, deleteObject, storage } from "@/lib/r2Storage";
-import { buildInternationalPhone, getLatamCountry, LATAM_COUNTRIES } from "@/helpers/latamCountries";
+import { buildInternationalPhone, getLatamCountry, LATAM_COUNTRIES, resolveStoreCountryCode } from "@/helpers/latamCountries";
 
 type CheckoutFieldType = "text" | "number" | "tel" | "email" | "textarea" | "select" | "date";
 
@@ -148,7 +148,7 @@ const SettingsView: React.FC = () => {
             setEmail(data.email ?? "");
             setPhone(data.phone ?? "");
             setLocation(data.location ?? "");
-            setCountryCode(data.countryCode ?? "CO");
+            setCountryCode(resolveStoreCountryCode(data.countryCode, data.whatsapp));
 
             // cargar configuración de envíos
             setShippingEnabled(data.shippingEnabled ?? false);

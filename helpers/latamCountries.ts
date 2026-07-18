@@ -38,9 +38,31 @@ export const onlyPhoneDigits = (value: string) => String(value || "").replace(/\
 
 export const buildInternationalPhone = (countryCode: string, number: string) => {
   const country = getLatamCountry(countryCode);
-  const digits = onlyPhoneDigits(number).replace(/^0+/, "");
+  let digits = onlyPhoneDigits(number).replace(/^0+/, "");
   if (!digits) return "";
-  return digits.startsWith(country.dialCode) ? digits : `${country.dialCode}${digits}`;
+  if (digits.startsWith(country.dialCode)) return digits;
+
+  // Corrige registros antiguos guardados con el indicativo de otro país.
+  const expectedNationalLength = country.example.length;
+  if (digits.length > expectedNationalLength) {
+    const previousCountry = [...LATAM_COUNTRIES]
+      .sort((a, b) => b.dialCode.length - a.dialCode.length)
+      .find((item) => item.dialCode !== country.dialCode && digits.startsWith(item.dialCode));
+    if (previousCountry && digits.length - previousCountry.dialCode.length === expectedNationalLength) {
+      digits = digits.slice(previousCountry.dialCode.length);
+    }
+  }
+  return `${country.dialCode}${digits}`;
+};
+
+export const resolveStoreCountryCode = (countryCode?: string, storeWhatsapp?: string) => {
+  const explicit = getLatamCountry(countryCode || "CO");
+  const phone = onlyPhoneDigits(storeWhatsapp || "");
+  if (!phone || phone.startsWith(explicit.dialCode)) return explicit.code;
+  const detected = [...LATAM_COUNTRIES]
+    .sort((a, b) => b.dialCode.length - a.dialCode.length)
+    .find((country) => phone.startsWith(country.dialCode));
+  return detected?.code || explicit.code;
 };
 
 export const formatInternationalPhone = (countryCode: string, number: string) => {

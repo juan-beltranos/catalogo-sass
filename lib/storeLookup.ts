@@ -1,6 +1,7 @@
 import { collection, getDocs, limit, query, where } from "@/lib/supabaseFirestore";
 import { db } from "./supabase";
 import { setActiveCurrencyCountry } from "@/helpers";
+import { resolveStoreCountryCode } from "@/helpers/latamCountries";
 
 export type StoreLookup = {
   id: string;
@@ -19,7 +20,7 @@ export const getStoreForOwner = async (ownerUid: string): Promise<StoreLookup | 
   const now = Date.now();
   const cached = cache.get(ownerUid);
   if (cached && cached.expiresAt > now) {
-    setActiveCurrencyCountry(cached.value?.data?.countryCode);
+    setActiveCurrencyCountry(resolveStoreCountryCode(cached.value?.data?.countryCode, cached.value?.data?.whatsapp));
     return cached.value;
   }
 
@@ -31,7 +32,7 @@ export const getStoreForOwner = async (ownerUid: string): Promise<StoreLookup | 
   )
     .then((snap) => {
       const value = snap.empty ? null : { id: snap.docs[0].id, data: snap.docs[0].data() as Record<string, any> };
-      setActiveCurrencyCountry(value?.data?.countryCode);
+      setActiveCurrencyCountry(resolveStoreCountryCode(value?.data?.countryCode, value?.data?.whatsapp));
       cache.set(ownerUid, { value, expiresAt: Date.now() + CACHE_TTL_MS });
       return value;
     })
