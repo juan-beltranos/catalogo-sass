@@ -12,7 +12,7 @@ import {
 import { db } from "@/lib/supabase";
 import { getStoreForOwner } from "@/lib/storeLookup";
 import { useAuth } from "../../context/AuthContext";
-import { formatCOP, formatDate, normalizePhone } from "@/helpers";
+import { formatCOP, formatDate, normalizePhone, phoneForWhatsApp } from "@/helpers";
 import { Client, Order, OrderItem, OrderStatus } from "@/types";
 import Paginator from "@/components/catalog/Paginator";
 
@@ -131,6 +131,7 @@ const CustomersView: React.FC = () => {
     setClientOrders([]);
 
     const phone = normalizePhone(client.phone);
+    const internationalPhone = phoneForWhatsApp(phone);
 
     try {
       const ordersCol = collection(db, "stores", storeId, "orders");
@@ -138,7 +139,7 @@ const CustomersView: React.FC = () => {
       // ✅ 1) intento principal: clientId
       let q1 = query(
         ordersCol,
-        where("clientId", "==", phone),
+        where("customerPhone", "==", internationalPhone),
         orderBy("createdAt", "desc")
       );
 
@@ -154,7 +155,7 @@ const CustomersView: React.FC = () => {
       // ✅ 2) fallback: customer.phone (por si antes no guardabas clientId)
       const q2 = query(
         ordersCol,
-        where("customer.phone", "==", phone),
+        where("customerPhone", "==", phone),
         orderBy("createdAt", "desc")
       );
 
@@ -170,7 +171,7 @@ const CustomersView: React.FC = () => {
         const ordersCol = collection(db, "stores", storeId, "orders");
         const phone = normalizePhone(client.phone);
 
-        const qNoIndex = query(ordersCol, where("clientId", "==", phone));
+        const qNoIndex = query(ordersCol, where("customerPhone", "==", phone));
         const snap = await getDocs(qNoIndex);
 
         const orders = snap.docs
@@ -185,7 +186,7 @@ const CustomersView: React.FC = () => {
         setClientOrders(orders);
       } catch (e2) {
         console.error("Fallback also failed:", e2);
-        alert("No se pudo cargar el historial. Revisa índices en Firestore.");
+        alert("No se pudo cargar el historial del cliente.");
       }
     } finally {
       setLoadingOrders(false);
@@ -509,7 +510,7 @@ const CustomersView: React.FC = () => {
                 </button>
 
                 <a
-                  href={`https://wa.me/${normalizePhone(selectedClient.phone)}`}
+                  href={`https://wa.me/${phoneForWhatsApp(selectedClient.phone)}`}
                   target="_blank"
                   rel="noreferrer"
                   className="flex-1 bg-green-500 text-white py-3 rounded-lg font-bold flex items-center justify-center gap-2 hover:bg-green-600 transition-all shadow-lg shadow-green-100"

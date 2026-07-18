@@ -1,5 +1,5 @@
 import React from "react";
-import { parseCOP, formatCOP } from "@/helpers";
+import { parseCOP, formatCOP, getActiveCurrencyCode } from "@/helpers";
 import { Variant } from "@/types";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -116,7 +116,7 @@ const VariantsEditor: React.FC<Props> = ({ variants, onChange }) => {
                                 {/* Precio */}
                                 <div>
                                     <label className="block text-xs font-semibold text-gray-700 mb-1">
-                                        Precio (COP)
+                                        Precio ({getActiveCurrencyCode()})
                                     </label>
                                     <div className="relative">
                                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold">

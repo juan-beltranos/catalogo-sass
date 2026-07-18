@@ -28,6 +28,7 @@ export interface Store {
   name: string;
   whatsapp: string;
   slug: string;
+  countryCode?: string;
   address?: string;
   isActive?: boolean;
   createdAt?: string;

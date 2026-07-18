@@ -124,6 +124,7 @@ const dbStoreToApp = async (row: any) => {
     shippingCostCarrier: shipping.costCarrier ?? 0,
     shippingNote: shipping.note ?? "",
     shippingHidePrices: shipping.hidePrices ?? false,
+    countryCode: shipping.countryCode ?? "CO",
     checkoutFields: row.checkout_fields ?? [],
     hasActiveSubscription,
     subscriptionStatus: subscription?.subscription_status ?? subscription?.status ?? "inactive",
@@ -192,6 +193,7 @@ const appStoreToDb = (data: any) => {
       costCarrier: Number(data.shippingCostCarrier ?? 0),
       note: data.shippingNote ?? "",
       hidePrices: data.shippingHidePrices ?? false,
+      countryCode: data.countryCode ?? getShippingSettings(data).countryCode ?? "CO",
     };
   }
   return payload;
@@ -649,6 +651,8 @@ const mapField = (table: string, field: string) => {
     },
     orders: {
       clientId: "client_id",
+      customerPhone: "customer_phone",
+      "customer.phone": "customer_phone",
       shippingMethod: "delivery_method",
       shippingCost: "shipping_cost",
       channel: "source",

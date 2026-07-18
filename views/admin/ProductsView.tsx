@@ -20,7 +20,7 @@ import { getStoreForOwner } from "@/lib/storeLookup";
 import { useAuth } from "../../context/AuthContext";
 import { Product } from "@/interfaces";
 import { ImageItem, ImportedJsonProduct, ProductOption, Variant, VideoItem } from "@/types";
-import { formatCOP, parseCOP } from "@/helpers";
+import { formatCOP, parseCOP, getActiveCurrencyCode } from "@/helpers";
 import VariantsEditor from "@/components/admin/VariantsEditor";
 import { compressImageFile } from "@/helpers/imageCompression";
 import { MAX_VIDEO_MB, validateVideoFile } from "@/helpers/videoValidation";
@@ -1524,9 +1524,9 @@ const ProductsView: React.FC = () => {
           <form onSubmit={handleAddProduct} className="space-y-4">
             <input type="text" placeholder="Nombre" value={name} onChange={(e) => setName(e.target.value)} className="w-full p-2 border rounded" required />
             <textarea placeholder="Descripción (opcional)" value={description} onChange={(e) => setDescription(e.target.value)} className="w-full p-2 border rounded" rows={3} />
-            <input type="text" placeholder="Precio (COP) ej: 250000 o 250.000" value={priceInput} onChange={(e) => setPriceInput(e.target.value)} className="w-full p-2 border rounded" required />
+            <input type="text" placeholder={`Precio (${getActiveCurrencyCode()})`} value={priceInput} onChange={(e) => setPriceInput(e.target.value)} className="w-full p-2 border rounded" required />
             <div>
-              <label className="text-xs text-gray-500">Precio mayorista (COP)</label>
+              <label className="text-xs text-gray-500">Precio mayorista ({getActiveCurrencyCode()})</label>
               <input type="text" placeholder="Opcional. Ej: 200000 o 200.000" value={wholesalePriceInput} onChange={(e) => setWholesalePriceInput(e.target.value)} className="w-full mt-1 p-2 border rounded" />
               <div className="mt-1 text-xs text-gray-400">Solo se muestra en el enlace del catálogo mayorista.</div>
             </div>
@@ -1543,7 +1543,7 @@ const ProductsView: React.FC = () => {
                 <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <select value={discountType} onChange={(e) => setDiscountType(e.target.value as any)} className="w-full p-2 border rounded">
                     <option value="percent">% Porcentaje</option>
-                    <option value="amount">$ Valor (COP)</option>
+                    <option value="amount">Valor ({getActiveCurrencyCode()})</option>
                   </select>
                   <input type="text" placeholder={discountType === "percent" ? "Ej: 10" : "Ej: 20000"} value={discountValueInput} onChange={(e) => setDiscountValueInput(e.target.value)} className="w-full p-2 border rounded sm:col-span-2" />
                   <div className="sm:col-span-3 text-xs text-gray-500">
@@ -1884,12 +1884,12 @@ const ProductsView: React.FC = () => {
                   <input type="text" value={editingProduct.name} onChange={(e) => setEditingProduct({ ...editingProduct, name: e.target.value })} className="w-full p-2 border rounded" />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">Precio base (COP)</label>
+                  <label className="text-xs text-gray-500">Precio base ({getActiveCurrencyCode()})</label>
                   <input type="text" value={editPriceInput} onChange={(e) => setEditPriceInput(e.target.value)} className="w-full p-2 border rounded" />
                   <div className="text-xs text-gray-400 mt-1">Preview: {formatCOP(parseCOP(editPriceInput))}</div>
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500">Precio mayorista (COP)</label>
+                  <label className="text-xs text-gray-500">Precio mayorista ({getActiveCurrencyCode()})</label>
                   <input type="text" value={editWholesalePriceInput} onChange={(e) => setEditWholesalePriceInput(e.target.value)} className="w-full p-2 border rounded" placeholder="Opcional" />
                   <div className="text-xs text-gray-400 mt-1">Se usa únicamente en el enlace mayorista.</div>
                 </div>
@@ -1909,7 +1909,7 @@ const ProductsView: React.FC = () => {
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                       <select value={editDiscountType} onChange={(e) => setEditDiscountType(e.target.value as any)} className="p-2 border rounded">
                         <option value="percent">% Porcentaje</option>
-                        <option value="amount">$ Valor (COP)</option>
+                        <option value="amount">Valor ({getActiveCurrencyCode()})</option>
                       </select>
                       <input type="text" value={editDiscountValueInput} onChange={(e) => setEditDiscountValueInput(e.target.value)} placeholder={editDiscountType === "percent" ? "Ej: 10" : "Ej: 20000"} className="p-2 border rounded sm:col-span-2" />
                       <div className="sm:col-span-3 text-xs text-gray-500">

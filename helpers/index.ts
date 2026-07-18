@@ -1,4 +1,11 @@
 import { CartItem, Product } from "@/types";
+import { buildInternationalPhone, formatStoreCurrency, getLatamCountry } from "@/helpers/latamCountries";
+
+let activeCurrencyCountry = "CO";
+export const setActiveCurrencyCountry = (countryCode?: string) => {
+    activeCurrencyCountry = String(countryCode || "CO").toUpperCase();
+};
+export const getActiveCurrencyCode = () => getLatamCountry(activeCurrencyCountry).currency;
 
 export function slugify(input: string) {
     return input
@@ -11,17 +18,21 @@ export function slugify(input: string) {
 }
 
 export function formatCOP(value: number) {
-    return new Intl.NumberFormat("es-CO", {
-        style: "currency",
-        currency: "COP",
-        maximumFractionDigits: 0,
-    }).format(value);
+    return formatStoreCurrency(value, activeCurrencyCountry);
 }
 
 // Convierte "25.000" / "25,000" / "$ 25.000" a 25000
 export function parseCOP(input: string): number {
-    const onlyDigits = input.replace(/[^\d]/g, "");
-    return onlyDigits ? parseInt(onlyDigits, 10) : 0;
+    const clean = String(input || "").replace(/[^\d.,-]/g, "");
+    if (!clean) return 0;
+    const lastDot = clean.lastIndexOf(".");
+    const lastComma = clean.lastIndexOf(",");
+    const separator = Math.max(lastDot, lastComma);
+    if (separator >= 0 && clean.length - separator - 1 <= 2) {
+        const normalized = clean.slice(0, separator).replace(/[^\d-]/g, "") + "." + clean.slice(separator + 1).replace(/\D/g, "");
+        return Number(normalized) || 0;
+    }
+    return Number(clean.replace(/[^\d-]/g, "")) || 0;
 }
 
 export function cartStorageKey(slug: string) {
@@ -63,10 +74,13 @@ export function formatDate(ts: any) {
     }
 }
 export function waTo(phoneDigits: string, message?: string) {
-    const clean = (phoneDigits || "").replace(/[^\d]/g, "");
+    const clean = buildInternationalPhone(activeCurrencyCountry, phoneDigits);
     const text = encodeURIComponent(message || "");
     return `https://api.whatsapp.com/send?phone=${clean}${message ? `&text=${text}` : ""}`;
 }
+
+export const phoneForWhatsApp = (phone: string) =>
+  buildInternationalPhone(activeCurrencyCountry, phone);
 
 export function safeDate(ts: any) {
   try {

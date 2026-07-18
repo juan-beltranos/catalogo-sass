@@ -31,6 +31,7 @@ as $$
     'shippingCostCarrier', coalesce((s.shipping_settings->>'costCarrier')::numeric, 0),
     'shippingNote', coalesce(s.shipping_settings->>'note', ''),
     'shippingHidePrices', coalesce((s.shipping_settings->>'hidePrices')::boolean, false),
+    'countryCode', coalesce(s.shipping_settings->>'countryCode', 'CO'),
     'hasActiveSubscription', coalesce(
       sub.subscription_status in ('active', 'trial')
       and sub.subscription_end_at >= now(), false
@@ -93,4 +94,3 @@ begin
     );
   end loop;
 end $$;
-

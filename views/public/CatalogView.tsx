@@ -29,11 +29,11 @@ import {
   buildWaLink,
   calcTotal,
   cartStorageKey,
-  formatCOP,
   getProductDisplayPrice,
   getProductMainImage,
   norm,
 } from "@/helpers";
+import { buildInternationalPhone, formatStoreCurrency } from "@/helpers/latamCountries";
 import { ImageCarousel } from "@/components/catalog/ImageCarousel";
 import { cldImg } from "@/helpers/r2Upload";
 import {
@@ -321,6 +321,8 @@ const CatalogView: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [store, setStore] = useState<Store | null>(null);
+  const countryCode = (store as any)?.countryCode || "CO";
+  const formatCOP = (value: number) => formatStoreCurrency(value, countryCode);
   const [catalogUnavailableReason, setCatalogUnavailableReason] =
     useState<CatalogUnavailableReason | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
@@ -814,7 +816,7 @@ const CatalogView: React.FC = () => {
     if (!store || catalogUnavailableReason) return;
     if (!cart.length) return;
     const cleanName = customerName.trim();
-    const cleanPhone = customerPhone.trim().replace(/[^\d]/g, "");
+    const cleanPhone = buildInternationalPhone(countryCode, customerPhone);
     const cleanAddress = customerAddress.trim();
     const customFields: CheckoutFieldAnswer[] = checkoutFields.map((field) => ({
       id: field.id,

@@ -16,6 +16,7 @@ import { slugify } from "@/helpers";
 import { compressImageFile } from "@/helpers/imageCompression";
 import { getCatalogShareUrl } from "@/helpers/catalogLinks";
 import { ref, uploadBytes, getDownloadURL, deleteObject, storage } from "@/lib/r2Storage";
+import { buildInternationalPhone, getLatamCountry, LATAM_COUNTRIES } from "@/helpers/latamCountries";
 
 type CheckoutFieldType = "text" | "number" | "tel" | "email" | "textarea" | "select" | "date";
 
@@ -94,6 +95,7 @@ const SettingsView: React.FC = () => {
     const [email, setEmail] = useState("");
     const [phone, setPhone] = useState("");
     const [location, setLocation] = useState("");
+    const [countryCode, setCountryCode] = useState("CO");
 
     // form — envíos
     const [shippingEnabled, setShippingEnabled] = useState(false);
@@ -146,6 +148,7 @@ const SettingsView: React.FC = () => {
             setEmail(data.email ?? "");
             setPhone(data.phone ?? "");
             setLocation(data.location ?? "");
+            setCountryCode(data.countryCode ?? "CO");
 
             // cargar configuración de envíos
             setShippingEnabled(data.shippingEnabled ?? false);
@@ -330,7 +333,7 @@ const SettingsView: React.FC = () => {
                 name: name.trim(),
                 slug: cleanSlug,
                 description: description.trim(),
-                whatsapp: whatsapp.trim(),
+                whatsapp: buildInternationalPhone(countryCode, whatsapp),
                 isActive,
                 // nuevos campos
                 brandColor,
@@ -346,6 +349,7 @@ const SettingsView: React.FC = () => {
                 shippingCostCarrier: Number(shippingCostCarrier) || 0,
                 shippingNote: shippingNote.trim(),
                 shippingHidePrices,
+                countryCode,
                 checkoutFields: normalizeCheckoutFields(checkoutFields),
                 ...logoPayload,
                 ...bannerPayload,
@@ -382,6 +386,7 @@ const SettingsView: React.FC = () => {
                         costCarrier: storeChanges.shippingCostCarrier,
                         note: storeChanges.shippingNote,
                         hidePrices: storeChanges.shippingHidePrices,
+                        countryCode,
                     },
                     checkout_fields: storeChanges.checkoutFields,
                     updated_at: new Date().toISOString(),
@@ -405,8 +410,9 @@ const SettingsView: React.FC = () => {
                 name,
                 slug: cleanSlug,
                 description,
-                whatsapp,
+                whatsapp: buildInternationalPhone(countryCode, whatsapp),
                 isActive,
+                countryCode,
                 checkoutFields: normalizeCheckoutFields(checkoutFields),
                 ...logoPayload,
                 ...bannerPayload,
@@ -1047,15 +1053,30 @@ const SettingsView: React.FC = () => {
             <div className="bg-white border rounded-xl p-6 space-y-4">
                 <h2 className="font-bold text-gray-900">Redes sociales y contacto</h2>
 
+                <div>
+                    <label className="text-sm font-medium text-gray-700">País, prefijo y moneda</label>
+                    <select
+                        className="w-full mt-1 p-3 border rounded-lg bg-white"
+                        value={countryCode}
+                        onChange={(e) => setCountryCode(e.target.value)}
+                    >
+                        {LATAM_COUNTRIES.map((country) => (
+                            <option key={country.code} value={country.code}>
+                                {country.name} (+{country.dialCode}) · {country.currency}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+
                 {/* WhatsApp principal */}
                 <div>
                     <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
                         <i className="fa-brands fa-whatsapp text-green-500" />
-                        WhatsApp principal (solo números)
+                        WhatsApp principal (+{getLatamCountry(countryCode).dialCode})
                     </label>
                     <input
                         className="w-full mt-1 p-3 border rounded-lg"
-                        placeholder="573001234567"
+                        placeholder={getLatamCountry(countryCode).example}
                         value={whatsapp}
                         onChange={(e) => setWhatsapp(e.target.value.replace(/[^\d]/g, ""))}
                     />
