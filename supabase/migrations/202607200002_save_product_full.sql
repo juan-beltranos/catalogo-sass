@@ -32,6 +32,7 @@ begin
       category_id = nullif(p_product->>'categoryId', '')::uuid,
       is_active = coalesce((p_product->>'isActive')::boolean, true),
       allow_cash_on_delivery = coalesce((p_product->>'allowsCashOnDelivery')::boolean, true),
+      stock = coalesce(nullif(p_product->>'stock', '')::integer, stock),
       sort_order = coalesce(nullif(p_product->>'order', '')::integer, sort_order),
       updated_at = now()
     where id = p_product_id and store_id = p_store_id;

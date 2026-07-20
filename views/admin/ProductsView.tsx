@@ -648,8 +648,30 @@ const ProductsView: React.FC = () => {
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
 
-      const rows = XLSX.utils.sheet_to_json<any>(worksheet, {
+      const rawRows = XLSX.utils.sheet_to_json<any>(worksheet, {
         defval: "",
+      });
+
+      // Adapta exportaciones antiguas/externas que usan encabezados en
+      // minusculas o snake_case al formato canonico del importador actual.
+      const rows = rawRows.map((raw) => {
+        const isLegacyFormat = "nombre" in raw || "imagenes_urls" in raw;
+        if (!isLegacyFormat) return raw;
+        const hidden = parseBooleanFromExcel(raw.oculto);
+        return {
+          ...raw,
+          ID: raw.ID || raw.id || "",
+          Nombre: raw.Nombre || raw.nombre || "",
+          SKU: raw.SKU || raw.sku || "",
+          Precio: raw.Precio || raw.precio || "",
+          ["Descripci\u00f3n"]: raw.descripcion || "",
+          ["Categor\u00eda"]: raw.categoria || "General",
+          ["Im\u00e1genes URLs"]: raw.imagenes_urls || "",
+          ["Im\u00e1genes publicId/path"]: raw.imageId || "",
+          ["Visible en cat\u00e1logo"]: hidden ? "No" : "Si",
+          Orden: raw.Orden !== undefined && raw.Orden !== "" ? raw.Orden : raw.orden,
+          Stock: raw.Stock !== undefined && raw.Stock !== "" ? raw.Stock : raw.cantidad,
+        };
       });
 
       if (!rows.length) {
@@ -878,6 +900,8 @@ const ProductsView: React.FC = () => {
         if (hasOptionsValue || !isUpdatingExistingProduct) payload.options = options;
         if (hasVariantsValue || !isUpdatingExistingProduct) payload.variants = variants;
         if (hasIsActiveValue || !isUpdatingExistingProduct) payload.isActive = isActiveValue;
+        const stockRaw = row["Stock"];
+        if (String(stockRaw ?? "").trim() !== "") payload.stock = Math.max(0, parseNumberSafe(stockRaw));
         if (row["Orden"] !== undefined && String(row["Orden"] ?? "").trim() !== "") {
           payload.order = parseNumberSafe(row["Orden"]);
         } else if (!isUpdatingExistingProduct) {
