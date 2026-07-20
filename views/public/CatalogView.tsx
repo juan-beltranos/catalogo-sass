@@ -1561,9 +1561,9 @@ const CatalogView: React.FC = () => {
 
       {/* ── Variant Modal ── */}
       {productModal.open && productModal.product && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50">
-          <div className="bg-white w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl overflow-hidden shadow-xl">
-            <div className="p-4 sm:p-6 border-b flex items-start justify-between gap-3">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 sm:p-4">
+          <div className="flex h-[100dvh] w-full min-h-0 flex-col overflow-hidden bg-white shadow-xl sm:h-auto sm:max-h-[calc(100dvh-2rem)] sm:max-w-xl sm:rounded-3xl">
+            <div className="shrink-0 border-b p-3 sm:p-4 flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="text-lg sm:text-xl font-extrabold text-gray-900 break-words">
                   {productModal.product.name}
@@ -1580,7 +1580,7 @@ const CatalogView: React.FC = () => {
               </button>
             </div>
 
-            <div className="p-4 sm:p-6 space-y-4 max-h-[75vh] overflow-auto">
+            <div className="min-h-0 flex-1 overscroll-contain overflow-y-auto p-3 sm:p-5 space-y-4">
               <ImageCarousel
                 images={(productModal.product.images || [])
                   .map((x: any) => x.url)
@@ -1606,7 +1606,7 @@ const CatalogView: React.FC = () => {
                         key={v.path || v.url}
                         className="rounded-2xl overflow-hidden border bg-black"
                       >
-                        <video src={v.url} controls className="w-full h-56 object-contain" />
+                        <video src={v.url} controls className="h-[min(16rem,42dvh)] w-full object-contain" />
                       </div>
                     ))}
                   </div>
@@ -1757,7 +1757,16 @@ const CatalogView: React.FC = () => {
               })()}
             </div>
 
-            <div className="p-4 sm:p-6 border-t bg-white">
+            <div className="grid shrink-0 grid-cols-2 gap-2 border-t bg-white p-3 sm:p-4">
+              <button
+                type="button"
+                onClick={() =>
+                  setProductModal({ open: false, product: null, selectedVariantId: null, quantity: 1 })
+                }
+                className="w-full rounded-2xl border px-3 py-3 font-extrabold hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -1772,19 +1781,10 @@ const CatalogView: React.FC = () => {
                   }
                   setProductModal({ open: false, product: null, selectedVariantId: null, quantity: 1 });
                 }}
-                className="w-full rounded-2xl py-3 font-extrabold text-white hover:opacity-90"
+                className="w-full rounded-2xl px-3 py-3 font-extrabold text-white hover:opacity-90"
                 style={{ background: brandColor }}
               >
                 Añadir al carrito
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  setProductModal({ open: false, product: null, selectedVariantId: null, quantity: 1 })
-                }
-                className="w-full rounded-2xl py-3 font-extrabold border hover:bg-gray-50 mt-2"
-              >
-                Cancelar
               </button>
             </div>
           </div>

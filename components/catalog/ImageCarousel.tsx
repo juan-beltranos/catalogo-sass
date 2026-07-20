@@ -7,7 +7,7 @@ export const ImageCarousel: React.FC<{ images: string[]; alt: string }> = ({ ima
 
     if (!images.length) {
         return (
-            <div className="aspect-square bg-gray-100 rounded-2xl flex items-center justify-center text-gray-400">
+            <div className="h-[min(24rem,48dvh)] min-h-52 bg-gray-100 rounded-2xl flex items-center justify-center text-gray-400">
                 <i className="fa-regular fa-image text-2xl" />
             </div>
         );
@@ -18,7 +18,7 @@ export const ImageCarousel: React.FC<{ images: string[]; alt: string }> = ({ ima
 
     return (
         <div className="relative">
-            <div className="relative aspect-square bg-gray-100 rounded-2xl overflow-hidden">
+            <div className="relative h-[min(24rem,48dvh)] min-h-52 bg-gray-100 rounded-2xl overflow-hidden">
                 <img
                     src={images[i]}
                     alt={alt}
