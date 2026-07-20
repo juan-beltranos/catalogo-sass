@@ -1,17 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   collection,
-  addDoc,
-  deleteDoc,
-  doc,
-  updateDoc,
   query,
   orderBy,
   onSnapshot,
-  serverTimestamp,
-  getDocs,
-  where,
-  writeBatch,
 } from "@/lib/supabaseFirestore";
 import { db } from "@/lib/supabase";
 import { getStoreForOwner } from "@/lib/storeLookup";
@@ -228,6 +220,21 @@ const CategoriesView: React.FC = () => {
     return collection(db, "stores", storeId, "categories");
   }, [storeId]);
 
+  const categoryAction = async (payload: Record<string, any>) => {
+    if (!storeId) throw new Error("La tienda aun no esta lista.");
+    const { data } = await db.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) throw new Error("La sesion expiro. Inicia sesion nuevamente.");
+    const response = await fetch("/api/category-action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ storeId, ...payload }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result?.ok) throw new Error(result?.error || "No se pudo guardar la categoria.");
+    return result;
+  };
+
   const getCategoryUrl = (category: Category) => {
     if (!storeSlug) return "";
     return getCatalogShareUrl(storeSlug, { category: category.id });
@@ -360,17 +367,7 @@ const CategoriesView: React.FC = () => {
     setError("");
 
     try {
-      const batch = writeBatch(db);
-
-      reorderedCategories.forEach((cat) => {
-        const catRef = doc(db, "stores", storeId, "categories", cat.id);
-        batch.update(catRef, {
-          order: cat.order,
-          updatedAt: serverTimestamp(),
-        });
-      });
-
-      await batch.commit();
+      await categoryAction({ action: "reorder", categories: reorderedCategories });
     } catch (err) {
       console.error(err);
       setCategories(previousCategories);
@@ -389,15 +386,10 @@ const CategoriesView: React.FC = () => {
     try {
       const name = newCategoryName.trim();
       const order = Number(newCategoryOrder);
-      const created = await addDoc(categoriesRef, {
-        name,
-        order,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      const created = await categoryAction({ action: "save", name, order });
 
       setCategories((current) => {
-        const next = sortCategories([...current, { id: created.id, name, order }]);
+        const next = sortCategories([...current, { id: created.categoryId, name, order }]);
         setNewCategoryOrder(next.length ? Math.max(...next.map((c) => c.order)) + 1 : 1);
         setPage(Math.max(1, Math.ceil(next.length / PAGE_SIZE)));
         return next;
@@ -405,7 +397,7 @@ const CategoriesView: React.FC = () => {
       setNewCategoryName("");
     } catch (err) {
       console.error(err);
-      setError(getPlanLimitMessage(err) || "Error al guardar.");
+      setError(getPlanLimitMessage(err) || (err instanceof Error ? err.message : "Error al guardar."));
     } finally {
       setIsSubmitting(false);
     }
@@ -425,11 +417,11 @@ const CategoriesView: React.FC = () => {
         name: editingCategory.name.trim(),
         order: Number(editingCategory.order),
       };
-      const catRef = doc(db, "stores", storeId, "categories", editingCategory.id);
-      await updateDoc(catRef, {
+      await categoryAction({
+        action: "save",
+        categoryId: editingCategory.id,
         name: updatedCategory.name,
         order: updatedCategory.order,
-        updatedAt: serverTimestamp(),
       });
       setCategories((current) =>
         sortCategories(current.map((cat) => (cat.id === updatedCategory.id ? updatedCategory : cat))),
@@ -437,7 +429,7 @@ const CategoriesView: React.FC = () => {
       setEditingCategory(null);
     } catch (err) {
       console.error(err);
-      setError("Error al actualizar categoría");
+      setError(err instanceof Error ? err.message : "Error al actualizar categoría");
     } finally {
       setIsSubmitting(false);
     }
@@ -451,11 +443,11 @@ const CategoriesView: React.FC = () => {
     setCategories((current) => current.filter((cat) => cat.id !== id));
 
     try {
-      await deleteDoc(doc(db, "stores", storeId, "categories", id));
+      await categoryAction({ action: "delete", categoryId: id });
     } catch (err) {
       console.error(err);
       setCategories(previousCategories);
-      setError("Error al eliminar");
+      setError(err instanceof Error ? err.message : "Error al eliminar");
     }
   };
 
