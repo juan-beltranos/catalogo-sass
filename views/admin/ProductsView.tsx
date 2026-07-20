@@ -1283,14 +1283,13 @@ const ProductsView: React.FC = () => {
     setIsSubmitting(true);
     try {
       const bp = parseCOP(editPriceInput);
-      const prodRef = doc(db, "stores", storeId, "products", editingProduct.id);
       const cleanSku = editSku.trim() || null;
       const wholesalePrice = parseCOP(editWholesalePriceInput) || null;
       const discount = editHasDiscount && editDiscountValueNum > 0
         ? { type: editDiscountType, value: editDiscountType === "percent" ? Math.min(100, Math.max(0, editDiscountValueNum)) : Math.max(0, editDiscountValueNum) }
         : null;
 
-      await updateDoc(prodRef, {
+      const productChanges = {
         name: editingProduct.name.trim(), sku: cleanSku,
         description: (editingProduct.description ?? "").trim(),
         price: bp, wholesalePrice, discount, categoryId: editingProduct.categoryId, options: [],
@@ -1298,8 +1297,22 @@ const ProductsView: React.FC = () => {
         images: editingProduct.images ?? [], videos: editingProduct.videos ?? [],
         isActive: editingProduct.isActive ?? true,
         allowsCashOnDelivery: editingProduct.allowsCashOnDelivery ?? true,
-        updatedAt: serverTimestamp(),
+      };
+      const { data: sessionData } = await db.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) throw new Error("La sesion expiro. Inicia sesion nuevamente.");
+      const response = await fetch("/api/product-save", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ storeId, productId: editingProduct.id, product: productChanges }),
       });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result?.ok) {
+        throw new Error(result?.error || `No se pudo actualizar el producto (${response.status}).`);
+      }
 
       const keptPaths = new Set([
         ...(editingProduct.images ?? []).map((image: any) => image.publicId || image.path),
