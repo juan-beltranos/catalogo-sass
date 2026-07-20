@@ -262,6 +262,7 @@ const ProductsView: React.FC = () => {
   const [editDiscountType, setEditDiscountType] = useState<"percent" | "amount">("percent");
   const [editDiscountValueInput, setEditDiscountValueInput] = useState("");
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const originalEditMediaRef = useRef<{ images: ImageItem[]; videos: VideoItem[] }>({ images: [], videos: [] });
   const [editPriceInput, setEditPriceInput] = useState("");
   const [editWholesalePriceInput, setEditWholesalePriceInput] = useState("");
 
@@ -1256,6 +1257,10 @@ const ProductsView: React.FC = () => {
   };
 
   const openEdit = (p: Product) => {
+    originalEditMediaRef.current = {
+      images: [...(p.images ?? [])],
+      videos: [...(p.videos ?? [])],
+    };
     setEditingProduct(p);
     setEditPriceInput(String(p.price));
     setEditWholesalePriceInput(p.wholesalePrice ? String(p.wholesalePrice) : "");
@@ -1296,6 +1301,16 @@ const ProductsView: React.FC = () => {
         updatedAt: serverTimestamp(),
       });
 
+      const keptPaths = new Set([
+        ...(editingProduct.images ?? []).map((image: any) => image.publicId || image.path),
+        ...(editingProduct.videos ?? []).map((video: any) => video.path || video.publicId),
+      ].filter(Boolean));
+      const removedPaths = [
+        ...originalEditMediaRef.current.images.map((image: any) => image.publicId || image.path),
+        ...originalEditMediaRef.current.videos.map((video: any) => video.path || video.publicId),
+      ].filter((path): path is string => Boolean(path) && !keptPaths.has(path));
+      await Promise.allSettled(removedPaths.map((path) => deleteFromR2(path)));
+
       pageCache = null;
       allProductsCache.delete(storeId);
       setAllLoaded(false);
@@ -1320,7 +1335,6 @@ const ProductsView: React.FC = () => {
     if (Array.from(files).length > remaining) alert(`Solo se subirán ${remaining} imagen(es).`);
     const uploaded = await uploadImages(filesToUpload);
     const nextImages = [...(editingProduct.images || []), ...uploaded];
-    await updateDoc(doc(db, "stores", storeId, "products", editingProduct.id), { images: nextImages, updatedAt: serverTimestamp() });
     setEditingProduct({ ...editingProduct, images: nextImages });
   };
 
@@ -1328,10 +1342,7 @@ const ProductsView: React.FC = () => {
     if (!editingProduct || !storeId) return;
     if (!window.confirm("¿Eliminar esta imagen?")) return;
     const next = [...(editingProduct.images || [])];
-    const removed = next[index];
     next.splice(index, 1);
-    try { await deleteFromR2((removed as any)?.publicId || (removed as any)?.path); } catch (e) { console.warn(e); }
-    await updateDoc(doc(db, "stores", storeId, "products", editingProduct.id), { images: next, updatedAt: serverTimestamp() });
     setEditingProduct({ ...editingProduct, images: next });
   };
 

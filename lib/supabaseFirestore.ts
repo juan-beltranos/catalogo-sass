@@ -1006,11 +1006,11 @@ export const addDoc = async (ref: CollectionRef, data: DocumentData) => {
   const id = randomId();
   const cleaned = cleanData({ ...data, id });
   const payload = await basePayloadFor(ref, cleaned);
-  const { data: inserted, error } = await supabase
+  const { data: inserted, error } = await executeWithRetry(() => supabase
     .from(ref.table)
-    .insert({ ...payload, id })
+    .upsert({ ...payload, id }, { onConflict: "id" })
     .select("*")
-    .single();
+    .single());
   if (error) throw error;
   try {
     await afterWrite(ref, id, cleaned);
@@ -1076,7 +1076,8 @@ export const updateDoc = async (ref: DocRef, data: DocumentData) => {
   }
   const cleaned = await resolveIncrementPayload(ref, cleanData(data));
   const payload = await basePayloadFor(ref, cleaned);
-  const { error } = await applyBaseFilters(supabase.from(ref.table).update(payload), ref).eq("id", ref.id);
+  const { error } = await executeWithRetry(() =>
+    applyBaseFilters(supabase.from(ref.table).update(payload), ref).eq("id", ref.id));
   if (error) throw error;
   await afterWrite(ref, ref.id, cleaned);
 };
