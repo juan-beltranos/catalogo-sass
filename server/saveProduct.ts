@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
 
 type Env = Record<string, string | undefined>;
@@ -38,9 +39,9 @@ export async function saveProduct(
   if (userError || !userData.user) return { ok: false, status: 401, error: "La sesion expiro." };
 
   const storeId = String(input.storeId || "");
-  const productId = String(input.productId || "");
+  const productId = String(input.productId || randomUUID());
   const product = input.product || {};
-  if (!storeId || !productId || !productPayload(product).name) {
+  if (!storeId || !productPayload(product).name) {
     return { ok: false, status: 400, error: "Faltan datos del producto." };
   }
 
@@ -64,5 +65,5 @@ export async function saveProduct(
   });
   if (saveError) return { ok: false, status: 400, error: saveError.message };
 
-  return { ok: true, status: 200 };
+  return { ok: true, status: 200, productId };
 }

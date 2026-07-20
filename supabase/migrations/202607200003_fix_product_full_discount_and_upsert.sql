@@ -1,4 +1,5 @@
--- Actualiza el producto y todos sus datos relacionados dentro de la misma transaccion.
+-- Corrige instalaciones donde la migracion 002 ya fue aplicada: convierte
+-- discount_type al enum y permite que la misma operacion cree o actualice.
 create or replace function public.save_product_full(
   p_product_id uuid,
   p_store_id uuid,

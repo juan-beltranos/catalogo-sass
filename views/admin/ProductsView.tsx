@@ -605,6 +605,35 @@ const ProductsView: React.FC = () => {
     }
   };
 
+  const saveProductViaApi = async (product: Record<string, any>, productId?: string) => {
+    if (!storeId) throw new Error("La tienda aun no esta lista.");
+    const { data: sessionData } = await db.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+    if (!accessToken) throw new Error("La sesion expiro. Inicia sesion nuevamente.");
+
+    let lastError = "No se pudo guardar el producto.";
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const response = await fetch("/api/product-save", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({ storeId, productId, product }),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (response.ok && result?.ok && result?.productId) return String(result.productId);
+        lastError = result?.error || `No se pudo guardar el producto (${response.status}).`;
+        if (response.status < 500) break;
+      } catch (error: any) {
+        lastError = error?.message || lastError;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 350 * 2 ** attempt));
+    }
+    throw new Error(lastError);
+  };
+
   const importProductsFromExcel = async (file: File) => {
     if (!storeId || !prodsRef || !catsRef) {
       alert("La tienda aún no está lista.");
@@ -856,22 +885,18 @@ const ProductsView: React.FC = () => {
         }
 
         if (existingProduct) {
-          await updateDoc(
-            doc(db, "stores", storeId, "products", existingProduct.id),
-            payload
-          );
+          await saveProductViaApi({ ...existingProduct.data, ...payload }, existingProduct.id);
           importedProductIds.add(existingProduct.id);
           updated++;
         } else {
-          const newProductRef = await addDoc(prodsRef, {
+          const newProductId = await saveProductViaApi({
             ...payload,
             wholesalePrice: hasWholesalePrice ? wholesalePrice : null,
             allowsCashOnDelivery: hasCashOnDeliveryValue
               ? parseBooleanFromExcel(cashOnDeliveryRaw)
               : true,
-            createdAt: serverTimestamp(),
           });
-          importedProductIds.add(newProductRef.id);
+          importedProductIds.add(newProductId);
           created++;
         }
       }
@@ -882,15 +907,11 @@ const ProductsView: React.FC = () => {
 
       if (shouldReorderMissingProducts) {
         const productsNotInExcel = existingProducts.filter((p) => !importedProductIds.has(p.id));
-        for (let start = 0; start < productsNotInExcel.length; start += 450) {
-          const batch = writeBatch(db);
-          productsNotInExcel.slice(start, start + 450).forEach((product, index) => {
-            batch.update(doc(db, "stores", storeId, "products", product.id), {
-              order: rows.length + start + index,
-              updatedAt: serverTimestamp(),
-            });
-          });
-          await batch.commit();
+        for (const [index, product] of productsNotInExcel.entries()) {
+          await saveProductViaApi(
+            { ...product.data, order: rows.length + index },
+            product.id,
+          );
         }
       }
 
@@ -909,7 +930,8 @@ const ProductsView: React.FC = () => {
       );
     } catch (error) {
       console.error("Error importando Excel:", error);
-      alert(getPlanLimitMessage(error) || "No se pudo importar el Excel. Revisa que tenga el mismo formato exportado.");
+      const message = error instanceof Error ? error.message : String((error as any)?.message || "");
+      alert(getPlanLimitMessage(error) || `No se pudo importar el Excel: ${message || "revisa que tenga el mismo formato exportado."}`);
     } finally {
       setImportingExcel(false);
     }
@@ -1298,21 +1320,7 @@ const ProductsView: React.FC = () => {
         isActive: editingProduct.isActive ?? true,
         allowsCashOnDelivery: editingProduct.allowsCashOnDelivery ?? true,
       };
-      const { data: sessionData } = await db.auth.getSession();
-      const accessToken = sessionData.session?.access_token;
-      if (!accessToken) throw new Error("La sesion expiro. Inicia sesion nuevamente.");
-      const response = await fetch("/api/product-save", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({ storeId, productId: editingProduct.id, product: productChanges }),
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok || !result?.ok) {
-        throw new Error(result?.error || `No se pudo actualizar el producto (${response.status}).`);
-      }
+      await saveProductViaApi(productChanges, editingProduct.id);
 
       const keptPaths = new Set([
         ...(editingProduct.images ?? []).map((image: any) => image.publicId || image.path),
