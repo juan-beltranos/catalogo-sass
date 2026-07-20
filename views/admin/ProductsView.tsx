@@ -7,6 +7,8 @@ import {
   updateDoc,
   query,
   orderBy,
+  limit,
+  offset,
   onSnapshot,
   serverTimestamp,
   getDocs,
@@ -1018,11 +1020,18 @@ const ProductsView: React.FC = () => {
       try {
         const targetPage =
           mode === "first" ? 1 : mode === "next" ? page + 1 : Math.max(1, page - 1);
-        const snap = await getDocs(prodsRef);
-        const sortedProducts = sortProductsForAdmin(snap.docs.map(mapDocToProduct));
         const start = (targetPage - 1) * PAGE_SIZE;
-        const pageProducts = sortedProducts.slice(start, start + PAGE_SIZE);
-        const nextExists = sortedProducts.length > start + PAGE_SIZE;
+        const pageQuery = query(
+          prodsRef,
+          orderBy("order", "asc"),
+          orderBy("createdAt", "desc"),
+          limit(PAGE_SIZE + 1),
+          offset(start),
+        );
+        const snap = await getDocs(pageQuery);
+        const sortedProducts = sortProductsForAdmin(snap.docs.map(mapDocToProduct));
+        const pageProducts = sortedProducts.slice(0, PAGE_SIZE);
+        const nextExists = sortedProducts.length > PAGE_SIZE;
 
         setProducts(pageProducts);
         setHasNext(nextExists);
@@ -1168,8 +1177,10 @@ const ProductsView: React.FC = () => {
         createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
       });
 
+      pageCache = null;
+      allProductsCache.delete(storeId);
+      setAllLoaded(false);
       await loadFirstPage();
-      if (allLoaded) await reloadAllProducts();
       resetCreateForm();
       setCreateVariants([]);
     } catch (err) {
@@ -1285,12 +1296,16 @@ const ProductsView: React.FC = () => {
         updatedAt: serverTimestamp(),
       });
 
+      pageCache = null;
+      allProductsCache.delete(storeId);
+      setAllLoaded(false);
       await loadFirstPage();
-      if (allLoaded) await reloadAllProducts();
       setEditingProduct(null);
     } catch (err) {
       console.error(err);
-      alert("Error al actualizar producto");
+      const limitMessage = getPlanLimitMessage(err);
+      const message = limitMessage || (err instanceof Error ? err.message : "Error desconocido");
+      alert(`Error al actualizar producto: ${message}`);
     } finally {
       setIsSubmitting(false);
     }

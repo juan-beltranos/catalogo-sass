@@ -14,6 +14,8 @@ const uploadEndpoint =
   import.meta.env.VITE_R2_UPLOAD_ENDPOINT || "/api/r2-upload";
 const deleteEndpoint =
   import.meta.env.VITE_R2_DELETE_ENDPOINT || "/api/r2-delete";
+const signedUploadEndpoint = "/api/r2-upload-url";
+const VERCEL_SAFE_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 const getExtension = (file: File) => {
   const fromName = file.name.split(".").pop()?.toLowerCase();
@@ -49,6 +51,50 @@ export async function uploadToR2(params: {
 }): Promise<R2UploadResult> {
   const { file, folder, resourceType = "image", onProgress } = params;
   const path = params.path || buildPath(folder, file);
+
+  // Vercel Functions rechaza cuerpos mayores a 4.5 MB. Para esos archivos
+  // obtenemos una URL temporal y enviamos el contenido directamente a R2.
+  if (file.size > VERCEL_SAFE_UPLOAD_BYTES) {
+    const signedResponse = await fetch(signedUploadEndpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        path,
+        contentType: file.type || "application/octet-stream",
+        size: file.size,
+      }),
+    });
+    const signed = await signedResponse.json().catch(() => ({}));
+    if (!signedResponse.ok || !signed?.uploadUrl) {
+      throw new Error(signed?.error || "No se pudo preparar la subida del archivo");
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("PUT", signed.uploadUrl);
+      xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) onProgress?.(Math.round((event.loaded / event.total) * 100));
+      };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) resolve();
+        else reject(new Error(`R2 rechazo la subida (${xhr.status})`));
+      };
+      xhr.onerror = () => reject(new Error(
+        "R2 bloqueo la subida directa. Revisa la politica CORS del bucket para permitir PUT desde este dominio.",
+      ));
+      xhr.send(file);
+    });
+
+    return {
+      url: signed.url,
+      path: signed.path ?? path,
+      publicId: signed.path ?? path,
+      bytes: file.size,
+      format: getExtension(file),
+    };
+  }
+
   const url = `${uploadEndpoint}?path=${encodeURIComponent(path)}&contentType=${encodeURIComponent(
     file.type || "application/octet-stream",
   )}&resourceType=${encodeURIComponent(resourceType)}`;

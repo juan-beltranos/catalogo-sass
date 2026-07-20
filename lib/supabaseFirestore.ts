@@ -28,6 +28,32 @@ const isUuid = (value: any) =>
 
 const randomId = () => crypto.randomUUID();
 
+const isTransientNetworkError = (error: any) => {
+  const message = String(error?.message || error?.details || error || "").toLowerCase();
+  return message.includes("failed to fetch") || message.includes("networkerror") || message.includes("load failed");
+};
+
+const executeWithRetry = async <T extends { data?: any; error?: any }>(
+  operation: () => PromiseLike<T>,
+  attempts = 3,
+): Promise<T> => {
+  let lastResult: T | undefined;
+  let lastThrown: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const result = await operation();
+      lastResult = result;
+      if (!result?.error || !isTransientNetworkError(result.error) || attempt === attempts - 1) return result;
+    } catch (error) {
+      lastThrown = error;
+      if (!isTransientNetworkError(error) || attempt === attempts - 1) throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300 * 2 ** attempt));
+  }
+  if (lastResult) return lastResult;
+  throw lastThrown;
+};
+
 const chunkArray = <T,>(items: T[], size: number) => {
   const chunks: T[][] = [];
   for (let index = 0; index < items.length; index += size) {
@@ -49,9 +75,11 @@ const selectByForeignKey = async (
 ) => {
   const rows: any[] = [];
   for (const chunk of chunkArray(ids, 100)) {
-    let request = supabase.from(table).select("*").in(foreignKey, chunk);
-    if (orderField) request = request.order(orderField);
-    const { data, error } = await request;
+    const { data, error } = await executeWithRetry(() => {
+      let request = supabase.from(table).select("*").in(foreignKey, chunk);
+      if (orderField) request = request.order(orderField);
+      return request;
+    });
     if (error) throw error;
     rows.push(...(data ?? []));
   }
@@ -314,8 +342,28 @@ const appProductToDb = (data: any, storeId?: string) => {
 const syncProductChildren = async (productId: string, storeId: string | undefined, data: any) => {
   if (!storeId) return;
 
+  const rpcPayload = {
+    p_product_id: productId,
+    p_store_id: storeId,
+    p_images: "images" in data ? data.images ?? [] : null,
+    p_videos: "videos" in data ? data.videos ?? [] : null,
+    p_options: "options" in data ? data.options ?? [] : null,
+    p_variants: "variants" in data ? data.variants ?? [] : null,
+  };
+  const { error: rpcError } = await executeWithRetry(() =>
+    supabase.rpc("sync_product_children", rpcPayload));
+  if (!rpcError) return;
+
+  // Permite que el frontend siga funcionando durante el despliegue previo a
+  // aplicar la migracion. Cualquier otro error se conserva y se muestra.
+  const rpcMissing = rpcError.code === "PGRST202" ||
+    String(rpcError.message || "").includes("sync_product_children");
+  if (!rpcMissing) throw rpcError;
+
   if ("images" in data) {
-    await supabase.from("product_images").delete().eq("product_id", productId);
+    const { error: deleteError } = await executeWithRetry(() =>
+      supabase.from("product_images").delete().eq("product_id", productId));
+    if (deleteError) throw deleteError;
     const rows = (data.images ?? []).map((img: any, index: number) => ({
       product_id: productId,
       store_id: storeId,
@@ -325,13 +373,15 @@ const syncProductChildren = async (productId: string, storeId: string | undefine
       created_at: nowIso(),
     }));
     if (rows.length) {
-      const { error } = await supabase.from("product_images").insert(rows);
+      const { error } = await executeWithRetry(() => supabase.from("product_images").insert(rows));
       if (error) throw error;
     }
   }
 
   if ("videos" in data) {
-    await supabase.from("product_videos").delete().eq("product_id", productId);
+    const { error: deleteError } = await executeWithRetry(() =>
+      supabase.from("product_videos").delete().eq("product_id", productId));
+    if (deleteError) throw deleteError;
     const rows = (data.videos ?? []).map((video: any, index: number) => ({
       product_id: productId,
       store_id: storeId,
@@ -341,13 +391,15 @@ const syncProductChildren = async (productId: string, storeId: string | undefine
       created_at: nowIso(),
     }));
     if (rows.length) {
-      const { error } = await supabase.from("product_videos").insert(rows);
+      const { error } = await executeWithRetry(() => supabase.from("product_videos").insert(rows));
       if (error) throw error;
     }
   }
 
   if ("options" in data) {
-    await supabase.from("product_options").delete().eq("product_id", productId);
+    const { error: deleteError } = await executeWithRetry(() =>
+      supabase.from("product_options").delete().eq("product_id", productId));
+    if (deleteError) throw deleteError;
     const rows = (data.options ?? []).map((option: any, index: number) => ({
       ...(isUuid(option.id) ? { id: option.id } : {}),
       product_id: productId,
@@ -357,13 +409,15 @@ const syncProductChildren = async (productId: string, storeId: string | undefine
       sort_order: index,
     }));
     if (rows.length) {
-      const { error } = await supabase.from("product_options").insert(rows);
+      const { error } = await executeWithRetry(() => supabase.from("product_options").insert(rows));
       if (error) throw error;
     }
   }
 
   if ("variants" in data) {
-    await supabase.from("product_variants").delete().eq("product_id", productId);
+    const { error: deleteError } = await executeWithRetry(() =>
+      supabase.from("product_variants").delete().eq("product_id", productId));
+    if (deleteError) throw deleteError;
     const rows = (data.variants ?? []).map((variant: any) => ({
       ...(isUuid(variant.id) ? { id: variant.id } : {}),
       product_id: productId,
@@ -377,7 +431,7 @@ const syncProductChildren = async (productId: string, storeId: string | undefine
       updated_at: nowIso(),
     }));
     if (rows.length) {
-      const { error } = await supabase.from("product_variants").insert(rows);
+      const { error } = await executeWithRetry(() => supabase.from("product_variants").insert(rows));
       if (error) throw error;
     }
   }
@@ -875,12 +929,11 @@ export const getDocs = async (ref: CollectionRef | QueryRef) => {
   let rawRows: any[] = [];
 
   if (hasExplicitLimit) {
-    const request = applyServerConstraints(
+    const { data, error } = await executeWithRetry(() => applyServerConstraints(
       applyBaseFilters(supabase.from(ref.table).select("*"), ref),
       ref.table,
       constraints,
-    );
-    const { data, error } = await request;
+    ));
     if (error) throw error;
     rawRows = data ?? [];
   } else {
@@ -888,12 +941,11 @@ export const getDocs = async (ref: CollectionRef | QueryRef) => {
     // todas las páginas para que catálogos grandes no queden truncados.
     const pageSize = 1000;
     for (let from = 0; ; from += pageSize) {
-      const request = applyServerConstraints(
+      const { data, error } = await executeWithRetry(() => applyServerConstraints(
         applyBaseFilters(supabase.from(ref.table).select("*"), ref),
         ref.table,
         constraints,
-      ).range(from, from + pageSize - 1);
-      const { data, error } = await request;
+      ).range(from, from + pageSize - 1));
       if (error) throw error;
       const page = data ?? [];
       rawRows.push(...page);
@@ -960,7 +1012,15 @@ export const addDoc = async (ref: CollectionRef, data: DocumentData) => {
     .select("*")
     .single();
   if (error) throw error;
-  await afterWrite(ref, id, cleaned);
+  try {
+    await afterWrite(ref, id, cleaned);
+  } catch (error) {
+    // Evita dejar un producto sin variantes o medios si falla su sincronizacion.
+    if (ref.table === "products") {
+      await supabase.from("products").delete().eq("id", id).eq("store_id", ref.storeId);
+    }
+    throw error;
+  }
   return { kind: "doc", path: [...ref.path, id], table: ref.table, id, storeId: ref.storeId, data: () => inserted };
 };
 

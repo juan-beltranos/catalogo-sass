@@ -196,9 +196,17 @@ El esquema SQL y las políticas RLS no se encuentran actualmente versionados en 
 Las imágenes y videos se guardan en Cloudflare R2. El frontend construye una clave de objeto y utiliza:
 
 - `PUT /api/r2-upload`
+- `POST /api/r2-upload-url` para obtener una URL temporal; los archivos mayores a 4 MB se suben directamente a R2
 - `POST /api/r2-delete`
 
 La URL pública se forma con `R2_PUBLIC_BASE_URL`. El bucket debe permitir lectura pública únicamente si el catálogo necesita mostrar los archivos directamente.
+
+Para la subida directa, configura CORS en el bucket R2 permitiendo `PUT` y el header
+`Content-Type` desde el dominio de producción y desde `http://localhost:5173`. Sin esta
+regla, el navegador bloqueará videos mayores a 4 MB aunque la URL temporal sea válida.
+La migración `202607200001_atomic_product_children.sql` también debe aplicarse en
+Supabase antes del despliegue para guardar imágenes, videos, opciones y variantes en
+una sola transacción.
 
 ## Seguridad
 
