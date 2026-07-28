@@ -605,6 +605,72 @@ const ProductsView: React.FC = () => {
     }
   };
 
+  const normalizeExcelHeader = (value: any) =>
+    String(value ?? "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]/g, "");
+
+  const normalizeExcelRow = (raw: Record<string, any>) => {
+    const valuesByHeader = new Map(
+      Object.entries(raw).map(([header, value]) => [normalizeExcelHeader(header), value])
+    );
+    const value = (...aliases: string[]) => {
+      for (const alias of aliases) {
+        const normalizedAlias = normalizeExcelHeader(alias);
+        if (valuesByHeader.has(normalizedAlias)) return valuesByHeader.get(normalizedAlias);
+      }
+      return "";
+    };
+
+    const hidden = parseBooleanFromExcel(value("oculto", "hidden"));
+    const visibleValue = value("Visible en catálogo", "visible", "activo", "isActive");
+
+    return {
+      ID: value("ID", "id producto", "productId"),
+      Nombre: value("Nombre", "name", "producto"),
+      SKU: value("SKU", "código", "codigo", "referencia", "ref"),
+      ["Descripción"]: value("Descripción", "descripcion", "description"),
+      ["Categoría"]: value("Categoría", "categoria", "category"),
+      ["ID Categoría"]: value("ID Categoría", "categoryId", "id_categoria"),
+      Precio: value("Precio", "price", "precio base"),
+      ["Precio formateado"]: value("Precio formateado", "formattedPrice"),
+      ["Precio mayorista"]: value("Precio mayorista", "wholesalePrice"),
+      ["Envío contra entrega"]: value(
+        "Envío contra entrega",
+        "envio contra entrega",
+        "allowsCashOnDelivery"
+      ),
+      ["Imágenes URLs"]: value(
+        "Imágenes URLs",
+        "imagenes_urls",
+        "imagen",
+        "imágenes",
+        "imagenes",
+        "image",
+        "imageUrl",
+        "image_url"
+      ),
+      ["Imágenes publicId/path"]: value(
+        "Imágenes publicId/path",
+        "imageId",
+        "imagePath",
+        "imagenes_path"
+      ),
+      ["Videos URLs"]: value("Videos URLs", "videos_urls", "video", "videos"),
+      ["Videos path"]: value("Videos path", "videos_path"),
+      ["Visible en catálogo"]: visibleValue !== "" ? visibleValue : hidden ? "No" : "",
+      ["Tipo descuento"]: value("Tipo descuento", "discountType"),
+      ["Valor descuento"]: value("Valor descuento", "discountValue"),
+      Variantes: value("Variantes", "variants"),
+      Opciones: value("Opciones", "options"),
+      Orden: value("Orden", "order"),
+      Stock: value("Stock", "cantidad", "quantity"),
+    };
+  };
+
   const saveProductViaApi = async (product: Record<string, any>, productId?: string) => {
     if (!storeId) throw new Error("La tienda aun no esta lista.");
     const { data: sessionData } = await db.auth.getSession();
@@ -652,27 +718,9 @@ const ProductsView: React.FC = () => {
         defval: "",
       });
 
-      // Adapta exportaciones antiguas/externas que usan encabezados en
-      // minusculas o snake_case al formato canonico del importador actual.
-      const rows = rawRows.map((raw) => {
-        const isLegacyFormat = "nombre" in raw || "imagenes_urls" in raw;
-        if (!isLegacyFormat) return raw;
-        const hidden = parseBooleanFromExcel(raw.oculto);
-        return {
-          ...raw,
-          ID: raw.ID || raw.id || "",
-          Nombre: raw.Nombre || raw.nombre || "",
-          SKU: raw.SKU || raw.sku || "",
-          Precio: raw.Precio || raw.precio || "",
-          ["Descripci\u00f3n"]: raw.descripcion || "",
-          ["Categor\u00eda"]: raw.categoria || "General",
-          ["Im\u00e1genes URLs"]: raw.imagenes_urls || "",
-          ["Im\u00e1genes publicId/path"]: raw.imageId || "",
-          ["Visible en cat\u00e1logo"]: hidden ? "No" : "Si",
-          Orden: raw.Orden !== undefined && raw.Orden !== "" ? raw.Orden : raw.orden,
-          Stock: raw.Stock !== undefined && raw.Stock !== "" ? raw.Stock : raw.cantidad,
-        };
-      });
+      // Convierte encabezados con distintas mayúsculas, acentos, espacios o
+      // nombres externos al formato canónico usado por el importador.
+      const rows = rawRows.map(normalizeExcelRow);
 
       if (!rows.length) {
         alert("El Excel no tiene productos para importar.");
@@ -830,7 +878,7 @@ const ProductsView: React.FC = () => {
             : null;
 
         const imagesUrls = String(row["Imágenes URLs"] ?? "")
-          .split("|")
+          .split(/\s*(?:\||;|\r?\n)\s*/)
           .map((url) => url.trim())
           .filter(Boolean);
 
