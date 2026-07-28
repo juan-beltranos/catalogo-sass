@@ -848,8 +848,6 @@ const CatalogView: React.FC = () => {
       return alert("Uno o más productos no permiten pago contra entrega.");
     }
 
-    const whatsappWindow = window.open("about:blank", "_blank");
-
     setPlacingOrder(true);
     try {
       const resolveCartProduct = async (item: CartItem) => {
@@ -1049,16 +1047,9 @@ const CatalogView: React.FC = () => {
       clearCart();
       setCustomFieldValues({});
       setCheckoutOpen(false);
-      if (whatsappWindow && !whatsappWindow.closed) {
-        whatsappWindow.location.href = waUrl;
-      } else {
-        window.location.href = waUrl;
-      }
+      window.location.assign(waUrl);
     } catch (e) {
       console.error(e);
-      if (whatsappWindow && !whatsappWindow.closed) {
-        whatsappWindow.close();
-      }
       const message = e instanceof Error ? e.message : "No se pudo crear el pedido. Intenta de nuevo.";
       alert(message);
     } finally {

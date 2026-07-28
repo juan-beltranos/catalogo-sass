@@ -80,6 +80,20 @@ const AdminLayout: React.FC = () => {
   const [storeInfo, setStoreInfo] = useState<StoreInfo | null>(null);
   const [loadingStore, setLoadingStore] = useState(true);
 
+  useEffect(() => {
+    const handleStoreSettingsUpdated = (event: Event) => {
+      const updatedStore = (event as CustomEvent<Partial<StoreInfo> & { id: string }>).detail;
+      if (!updatedStore?.id) return;
+
+      setStoreInfo((current) =>
+        current?.id === updatedStore.id ? { ...current, ...updatedStore } : current,
+      );
+    };
+
+    window.addEventListener('store-settings-updated', handleStoreSettingsUpdated);
+    return () => window.removeEventListener('store-settings-updated', handleStoreSettingsUpdated);
+  }, []);
+
   // El módulo de pago permanece visible para todos, incluidos usuarios legacy.
   const hideSubscriptionModule = false;
 

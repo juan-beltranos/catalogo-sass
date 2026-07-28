@@ -404,6 +404,14 @@ const SettingsView: React.FC = () => {
             }
             invalidateStoreForOwner(user?.uid);
 
+            window.dispatchEvent(new CustomEvent("store-settings-updated", {
+                detail: {
+                    id: store.id,
+                    name: storeChanges.name,
+                    slug: storeChanges.slug,
+                },
+            }));
+
             alert("Configuración guardada ✅");
             setStore({
                 ...store,

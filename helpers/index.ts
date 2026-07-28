@@ -46,7 +46,7 @@ export function calcTotal(cart: CartItem[]) {
 export function buildWaLink(phoneDigits: string, message: string) {
     const cleanPhone = phoneDigits.replace(/[^\d]/g, "");
     const text = encodeURIComponent(message);
-    return `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${text}`;
+    return `https://wa.me/${cleanPhone}?text=${text}`;
 }
 
 export function getProductMainImage(p: Product): string | undefined {
