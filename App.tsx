@@ -22,6 +22,7 @@ import SubscriptionRoute from './components/auth/SubscriptionRoute';
 import SubscriptionRequiredView from './views/admin/SubscriptionRequiredView';
 import ModuleRoute from './components/auth/ModuleRoute';
 import SubscriptionOptionRoute from './components/auth/SubscriptionOptionRoute';
+import WhatsAppSupportButton from './components/support/WhatsAppSupportButton';
 
 const App: React.FC = () => {
   return (
@@ -64,6 +65,7 @@ const App: React.FC = () => {
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        <WhatsAppSupportButton />
       </HashRouter>
     </AuthProvider>
   );
