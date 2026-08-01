@@ -18,6 +18,7 @@ import { useAuth } from '../../context/AuthContext';
 import Sidebar from '../admin/Sidebar';
 import { getCatalogSharePath } from '@/helpers/catalogLinks';
 import { useSubscriptionAccess } from '@/hooks/useSubscriptionAccess';
+import WhatsAppSupportButton from '../support/WhatsAppSupportButton';
 
 type StoreInfo = {
   id: string;
@@ -393,6 +394,8 @@ const AdminLayout: React.FC = () => {
           </div>
         </div>
       )}
+
+      <WhatsAppSupportButton />
     </div>
   );
 };
