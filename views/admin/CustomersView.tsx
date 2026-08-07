@@ -70,13 +70,16 @@ const CustomersView: React.FC = () => {
           const rawPhone = normalizePhone(x.phone ?? d.id);
           const phone = phoneForWhatsApp(rawPhone);
 
+          const savedFields = Array.isArray(x.customFields) ? x.customFields : [];
+          const savedPhone = savedFields.find((field: any) => field.id === "customer_phone")?.value;
           return {
             id: d.id,
             uuid: x.uuid,
             rawPhone,
             name: x.name ?? "Cliente",
-            phone,
+            phone: savedFields.length ? phoneForWhatsApp(normalizePhone(savedPhone || "")) : phone,
             address: x.address ?? "",
+            customFields: savedFields,
             totalOrders: Number(x.totalOrders ?? x.ordersCount ?? 0),
             totalSpent: Number(x.totalSpent ?? x.totalSpentCOP ?? 0),
             lastOrderAt: x.lastOrderAt ?? x.lastOrderDate,
@@ -434,7 +437,7 @@ const CustomersView: React.FC = () => {
               </div>
 
               <h2 className="text-2xl font-bold text-gray-900">{selectedClient.name}</h2>
-              <p className="text-gray-500">{selectedClient.phone}</p>
+              <p className="text-gray-500">{selectedClient.phone || "Sin teléfono"}</p>
 
               <div className="mt-6 grid grid-cols-2 gap-4">
                 <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
@@ -449,6 +452,19 @@ const CustomersView: React.FC = () => {
             </div>
 
             <div className="flex-1 overflow-y-auto p-8">
+              {(selectedClient.customFields || []).some((field) => field.value) ? (
+                <div className="mb-8 rounded-xl border border-gray-100 bg-gray-50 p-4">
+                  <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-400">Datos del formulario</h3>
+                  <div className="space-y-2">
+                    {(selectedClient.customFields || []).filter((field) => field.value).map((field) => (
+                      <div key={field.id} className="flex items-start justify-between gap-4 text-sm">
+                        <span className="text-gray-500">{field.label}</span>
+                        <span className="text-right font-semibold text-gray-800">{field.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               <h3 className="text-sm font-bold uppercase text-gray-400 tracking-wider mb-6">
                 Historial de pedidos
               </h3>

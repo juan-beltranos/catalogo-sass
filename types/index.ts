@@ -56,6 +56,41 @@ export type CartItem = {
     sku?: string;
 };
 
+export type RuleCondition = {
+    minQuantity?: number;
+    maxQuantity?: number;
+    minSubtotal?: number;
+    maxSubtotal?: number;
+};
+
+export type PricingRule = {
+    id: string;
+    name: string;
+    enabled: boolean;
+    priority: number;
+    condition: RuleCondition;
+    action: "fixed_subtotal" | "percent_discount" | "amount_discount";
+    value: number;
+    stopProcessing?: boolean;
+};
+
+export type ShippingRule = {
+    id: string;
+    name: string;
+    enabled: boolean;
+    priority: number;
+    shippingMethod?: "all" | "cod" | "carrier";
+    condition: RuleCondition;
+    action: "fixed_cost" | "free_shipping" | "amount_discount";
+    value: number;
+    stopProcessing?: boolean;
+};
+
+export type CommerceRules = {
+    pricing: PricingRule[];
+    shipping: ShippingRule[];
+};
+
 export type CheckoutFieldType = "text" | "number" | "tel" | "email" | "textarea" | "select" | "date";
 
 export type CheckoutFieldConfig = {
@@ -66,6 +101,7 @@ export type CheckoutFieldConfig = {
     enabled: boolean;
     placeholder?: string;
     options?: string[];
+    system?: boolean;
 };
 
 export type CheckoutFieldAnswer = {
@@ -103,6 +139,12 @@ export type Order = {
     items: OrderItem[];
     customFields?: CheckoutFieldAnswer[];
     total: number; // COP int
+    originalSubtotal?: number;
+    subtotal?: number;
+    discount?: number;
+    shippingMethod?: "cod" | "carrier" | null;
+    shippingCost?: number;
+    appliedRules?: { id: string; name: string; amount: number; kind: "pricing" | "shipping" }[];
     createdAt?: any;
     updatedAt?: any;
 };
@@ -112,6 +154,7 @@ export type Client = {
     name: string;
     phone: string;
     address: string;
+    customFields?: CheckoutFieldAnswer[];
 
     totalOrders: number;
     totalSpent: number; // COP int

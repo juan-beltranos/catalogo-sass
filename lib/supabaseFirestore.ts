@@ -154,6 +154,7 @@ const dbStoreToApp = async (row: any) => {
     shippingHidePrices: shipping.hidePrices ?? false,
     countryCode: shipping.countryCode ?? "CO",
     checkoutFields: row.checkout_fields ?? [],
+    commerceRules: row.commerce_rules ?? { pricing: [], shipping: [] },
     hasActiveSubscription,
     subscriptionStatus: subscription?.subscription_status ?? subscription?.status ?? "inactive",
     subscriptionType: subscription?.subscription_status === "trial" ? "free_trial" : "subscription",
@@ -189,6 +190,7 @@ const appStoreToDb = (data: any) => {
   if ("phone" in data) payload.phone = data.phone;
   if ("location" in data) payload.location = data.location;
   if ("checkoutFields" in data) payload.checkout_fields = data.checkoutFields ?? [];
+  if ("commerceRules" in data) payload.commerce_rules = data.commerceRules ?? { pricing: [], shipping: [] };
   if ("createdAt" in data) payload.created_at = data.createdAt;
   if ("updatedAt" in data) payload.updated_at = data.updatedAt;
 
@@ -444,6 +446,7 @@ const dbClientToApp = (row: any) => ({
   storeId: row.store_id,
   totalOrders: row.orders_count,
   totalSpent: Number(row.total_spent ?? 0),
+  customFields: row.custom_fields ?? [],
   lastOrderAt: row.last_order_at,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
@@ -454,6 +457,7 @@ const appClientToDb = (data: any, storeId?: string) => ({
   ...("name" in data ? { name: data.name } : {}),
   ...("phone" in data ? { phone: data.phone } : {}),
   ...("address" in data ? { address: data.address } : {}),
+  ...("customFields" in data ? { custom_fields: data.customFields ?? [] } : {}),
   ...("totalOrders" in data ? { orders_count: data.totalOrders } : {}),
   ...("totalSpent" in data ? { total_spent: data.totalSpent } : {}),
   ...("lastOrderAt" in data ? { last_order_at: data.lastOrderAt } : {}),
@@ -511,6 +515,9 @@ const hydrateOrders = async (rows: any[]) => {
       customFields,
       shippingMethod: row.delivery_method,
       shippingCost: Number(row.shipping_cost ?? 0),
+      originalSubtotal: Number(row.original_subtotal ?? row.subtotal ?? 0),
+      discount: Number(row.discount ?? 0),
+      appliedRules: row.applied_rules ?? [],
       subtotal: Number(row.subtotal ?? 0),
       total: Number(row.total ?? 0),
       items: (itemsByOrder.get(row.id) ?? []).map((item: any) => ({
@@ -544,6 +551,9 @@ const appOrderToDb = (data: any, storeId?: string) => ({
     : {}),
   ...("shippingMethod" in data ? { delivery_method: data.shippingMethod } : {}),
   ...("shippingCost" in data ? { shipping_cost: data.shippingCost } : {}),
+  ...("originalSubtotal" in data ? { original_subtotal: data.originalSubtotal } : {}),
+  ...("discount" in data ? { discount: data.discount } : {}),
+  ...("appliedRules" in data ? { applied_rules: data.appliedRules } : {}),
   ...("subtotal" in data ? { subtotal: data.subtotal } : {}),
   ...("total" in data ? { total: data.total } : {}),
   ...("channel" in data ? { source: data.channel } : {}),

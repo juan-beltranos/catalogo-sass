@@ -1,4 +1,4 @@
-import { CheckoutFieldConfig, ImageItem, ProductOption, Variant, VideoItem } from "@/types";
+import { CheckoutFieldConfig, CommerceRules, ImageItem, ProductOption, Variant, VideoItem } from "@/types";
 
 export interface Product {
   id: string;
@@ -35,6 +35,7 @@ export interface Store {
   logoUrl?: string;
   logoPath?: string;
   checkoutFields?: CheckoutFieldConfig[];
+  commerceRules?: CommerceRules;
 }
 
 export interface SidebarProps {

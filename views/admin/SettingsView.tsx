@@ -17,6 +17,10 @@ import { compressImageFile } from "@/helpers/imageCompression";
 import { getCatalogShareUrl } from "@/helpers/catalogLinks";
 import { ref, uploadBytes, getDownloadURL, deleteObject, storage } from "@/lib/r2Storage";
 import { buildInternationalPhone, getLatamCountry, LATAM_COUNTRIES, resolveStoreCountryCode } from "@/helpers/latamCountries";
+import type { CommerceRules } from "@/types";
+import { normalizeCommerceRules } from "@/helpers/commerceRules";
+import CommerceRulesEditor from "@/components/admin/CommerceRulesEditor";
+import { normalizeCheckoutFormFields } from "@/helpers/checkoutFields";
 
 type CheckoutFieldType = "text" | "number" | "tel" | "email" | "textarea" | "select" | "date";
 
@@ -28,6 +32,7 @@ type CheckoutFieldConfig = {
     enabled: boolean;
     placeholder?: string;
     options?: string[];
+    system?: boolean;
 };
 
 const checkoutFieldTypes: { value: CheckoutFieldType; label: string }[] = [
@@ -51,19 +56,7 @@ const createCheckoutField = (): CheckoutFieldConfig => ({
 });
 
 const normalizeCheckoutFields = (fields: any[]): CheckoutFieldConfig[] => {
-    return (Array.isArray(fields) ? fields : [])
-        .map((field) => ({
-            id: String(field.id || `field_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`),
-            label: String(field.label || "").trim(),
-            type: checkoutFieldTypes.some((item) => item.value === field.type) ? field.type : "text",
-            required: field.required === true,
-            enabled: field.enabled !== false,
-            placeholder: String(field.placeholder || "").trim(),
-            options: Array.isArray(field.options)
-                ? field.options.map((option: any) => String(option).trim()).filter(Boolean)
-                : [],
-        }))
-        .filter((field) => field.label);
+    return normalizeCheckoutFormFields(fields) as CheckoutFieldConfig[];
 };
 
 const SettingsView: React.FC = () => {
@@ -105,6 +98,7 @@ const SettingsView: React.FC = () => {
     const [shippingNote, setShippingNote] = useState("");
     const [shippingHidePrices, setShippingHidePrices] = useState(false);
     const [checkoutFields, setCheckoutFields] = useState<CheckoutFieldConfig[]>([]);
+    const [commerceRules, setCommerceRules] = useState<CommerceRules>({ pricing: [], shipping: [] });
 
     // cargar tienda
     useEffect(() => {
@@ -158,6 +152,7 @@ const SettingsView: React.FC = () => {
             setShippingNote(data.shippingNote ?? "");
             setShippingHidePrices(data.shippingHidePrices ?? false);
             setCheckoutFields(normalizeCheckoutFields(data.checkoutFields ?? []));
+            setCommerceRules(normalizeCommerceRules(data.commerceRules));
 
             setLoading(false);
         };
@@ -351,6 +346,7 @@ const SettingsView: React.FC = () => {
                 shippingHidePrices,
                 countryCode,
                 checkoutFields: normalizeCheckoutFields(checkoutFields),
+                commerceRules: normalizeCommerceRules(commerceRules),
                 ...logoPayload,
                 ...bannerPayload,
                 updatedAt: new Date(),
@@ -389,6 +385,7 @@ const SettingsView: React.FC = () => {
                         countryCode,
                     },
                     checkout_fields: storeChanges.checkoutFields,
+                    commerce_rules: storeChanges.commerceRules,
                     updated_at: new Date().toISOString(),
                 };
                 const response = await fetch("/api/store-settings", {
@@ -422,6 +419,7 @@ const SettingsView: React.FC = () => {
                 isActive,
                 countryCode,
                 checkoutFields: normalizeCheckoutFields(checkoutFields),
+                commerceRules: normalizeCommerceRules(commerceRules),
                 ...logoPayload,
                 ...bannerPayload,
             } as any);
@@ -693,6 +691,8 @@ const SettingsView: React.FC = () => {
                 </label>
             </div>
 
+            <CommerceRulesEditor value={commerceRules} onChange={setCommerceRules} />
+
             {/* ── Opciones de envío (NUEVO) ── */}
             <div className="bg-white border rounded-xl p-6 space-y-5">
                 <div className="flex items-center justify-between">
@@ -942,7 +942,7 @@ const SettingsView: React.FC = () => {
                                                 {field.label || "Campo sin nombre"}
                                             </p>
                                             <p className="text-xs text-gray-400">
-                                                {field.required ? "Obligatorio" : "Opcional"} · {field.enabled ? "Visible" : "Oculto"}
+                                                {field.system ? "Campo del sistema" : "Campo personalizado"} · {field.required ? "Obligatorio" : "Opcional"} · {field.enabled ? "Visible" : "Oculto"}
                                             </p>
                                         </div>
                                     </div>
@@ -969,7 +969,8 @@ const SettingsView: React.FC = () => {
                                         <button
                                             type="button"
                                             onClick={() => setCheckoutFields((prev) => prev.filter((item) => item.id !== field.id))}
-                                            className="h-9 w-9 rounded-lg border border-red-100 text-red-500 hover:bg-red-50"
+                                            disabled={field.system}
+                                            className="h-9 w-9 rounded-lg border border-red-100 text-red-500 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-30"
                                             aria-label="Eliminar campo"
                                         >
                                             <i className="fa-solid fa-trash text-xs" />
@@ -992,6 +993,7 @@ const SettingsView: React.FC = () => {
                                         <select
                                             className="mt-1 w-full rounded-lg border p-3 text-sm"
                                             value={field.type}
+                                            disabled={field.system}
                                             onChange={(e) => updateCheckoutField(field.id, { type: e.target.value as CheckoutFieldType })}
                                         >
                                             {checkoutFieldTypes.map((type) => (

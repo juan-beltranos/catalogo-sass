@@ -66,8 +66,12 @@ export function getProductDisplayPrice(p: Product): { label: string; value: numb
 
 export function formatDate(ts: any) {
     try {
-        const d = ts?.toDate?.() ? ts.toDate() : null;
-        if (!d) return "-";
+        let d: Date | null = null;
+        if (ts instanceof Date) d = ts;
+        else if (typeof ts?.toDate === "function") d = ts.toDate();
+        else if (typeof ts === "string" || typeof ts === "number") d = new Date(ts);
+        else if (typeof ts?.seconds === "number") d = new Date(ts.seconds * 1000);
+        if (!d || Number.isNaN(d.getTime())) return "-";
         return `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
     } catch {
         return "-";

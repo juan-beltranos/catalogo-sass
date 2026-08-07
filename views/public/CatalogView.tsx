@@ -42,6 +42,8 @@ import {
   getFinalUnitPrice,
   getProductCardPrice,
 } from "@/helpers/pricing";
+import { evaluateCommerceRules } from "@/helpers/commerceRules";
+import { normalizeCheckoutFormFields } from "@/helpers/checkoutFields";
 
 const PAGE_SIZE = 20;
 
@@ -83,6 +85,7 @@ type CheckoutFieldConfig = {
   enabled: boolean;
   placeholder?: string;
   options?: string[];
+  system?: boolean;
 };
 
 type CheckoutFieldAnswer = {
@@ -111,20 +114,7 @@ const getShippingConfig = (store: any): ShippingConfig => ({
 });
 
 const getCheckoutFields = (store: any): CheckoutFieldConfig[] => {
-  const fields = Array.isArray(store?.checkoutFields) ? store.checkoutFields : [];
-  return fields
-    .map((field: any) => ({
-      id: String(field.id || ""),
-      label: String(field.label || "").trim(),
-      type: field.type || "text",
-      required: field.required === true,
-      enabled: field.enabled !== false,
-      placeholder: String(field.placeholder || "").trim(),
-      options: Array.isArray(field.options)
-        ? field.options.map((option: any) => String(option).trim()).filter(Boolean)
-        : [],
-    }))
-    .filter((field: CheckoutFieldConfig) => field.id && field.label && field.enabled);
+  return normalizeCheckoutFormFields(store?.checkoutFields).filter((field) => field.enabled) as CheckoutFieldConfig[];
 };
 
 const SHIPPING_LABELS: Record<ShippingMethod, { label: string; icon: string; color: string; bg: string }> = {
@@ -375,6 +365,8 @@ const CatalogView: React.FC = () => {
   // ── Configuración de envío derivada del store ──
   const shippingConfig = useMemo(() => getShippingConfig(store), [store]);
   const checkoutFields = useMemo(() => getCheckoutFields(store), [store]);
+  const checkoutFieldById = useMemo(() => new Map(checkoutFields.map((field) => [field.id, field])), [checkoutFields]);
+  const customCheckoutFields = useMemo(() => checkoutFields.filter((field) => !field.system), [checkoutFields]);
   const cashOnDeliveryAvailable = useMemo(
     () => cart.every((item) => item.allowsCashOnDelivery !== false),
     [cart],
@@ -383,6 +375,26 @@ const CatalogView: React.FC = () => {
     () => shippingConfig.methods.filter((method) => method !== "cod" || cashOnDeliveryAvailable),
     [shippingConfig.methods, cashOnDeliveryAvailable],
   );
+
+  // Los carritos persisten entre visitas. Al abrir checkout, refresca la
+  // elegibilidad para no conservar un valor antiguo de contraentrega.
+  useEffect(() => {
+    if (!checkoutOpen || !store?.id || !cart.length) return;
+    let cancelled = false;
+    Promise.all(cart.map(async (item) => {
+      const snapshot = await getDoc(doc(db, "stores", store.id, "products", item.productId));
+      return snapshot.exists()
+        ? (snapshot.data() as Product).allowsCashOnDelivery !== false
+        : item.allowsCashOnDelivery !== false;
+    })).then((eligibility) => {
+      if (cancelled) return;
+      setCart((current) => current.map((item, index) => ({
+        ...item,
+        allowsCashOnDelivery: eligibility[index] ?? item.allowsCashOnDelivery,
+      })));
+    }).catch((error) => console.warn("No se pudo refrescar contraentrega:", error));
+    return () => { cancelled = true; };
+  }, [checkoutOpen, store?.id]);
 
   useEffect(() => {
     setCustomFieldValues((current) => {
@@ -409,15 +421,24 @@ const CatalogView: React.FC = () => {
   }, [shippingConfig.enabled, availableShippingMethods]);
 
   // Costo de envío según selección
-  const shippingCost = useMemo(() => {
+  const baseShippingCost = useMemo(() => {
     if (!shippingConfig.enabled || !selectedShipping) return 0;
     if (selectedShipping === "cod") return shippingConfig.costCOD;
     if (selectedShipping === "carrier") return shippingConfig.costCarrier;
     return 0;
   }, [shippingConfig, selectedShipping]);
 
-  const subtotal = useMemo(() => calcTotal(cart), [cart]);
-  const total = useMemo(() => subtotal + shippingCost, [subtotal, shippingCost]);
+  const originalSubtotal = useMemo(() => calcTotal(cart), [cart]);
+  const ruleSummary = useMemo(() => evaluateCommerceRules({
+    quantity: cart.reduce((sum, item) => sum + item.qty, 0),
+    subtotal: originalSubtotal,
+    shippingMethod: selectedShipping,
+    baseShippingCost,
+  }, (store as any)?.commerceRules), [cart, originalSubtotal, selectedShipping, baseShippingCost, store]);
+  const subtotal = ruleSummary.subtotal;
+  const discount = ruleSummary.discount;
+  const shippingCost = ruleSummary.shippingCost;
+  const total = ruleSummary.total;
 
   const categoryNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -815,27 +836,28 @@ const CatalogView: React.FC = () => {
   const placeOrder = async () => {
     if (!store || catalogUnavailableReason) return;
     if (!cart.length) return;
+    const fieldValue = (id: string) => ({
+      customer_name: customerName, customer_phone: customerPhone,
+      customer_address: customerAddress, order_notes: customerNotes,
+    } as Record<string, string>)[id] ?? customFieldValues[id] ?? "";
     const cleanName = customerName.trim();
-    const cleanPhone = buildInternationalPhone(countryCode, customerPhone);
+    const cleanPhone = customerPhone.trim() ? buildInternationalPhone(countryCode, customerPhone) : "";
     const cleanAddress = customerAddress.trim();
     const customFields: CheckoutFieldAnswer[] = checkoutFields.map((field) => ({
       id: field.id,
       label: field.label,
       type: field.type,
-      value: (customFieldValues[field.id] || "").trim(),
+      value: fieldValue(field.id).trim(),
     }));
     const missingCustomField = customFields.find(
       (field) => checkoutFields.find((config) => config.id === field.id)?.required && !field.value,
     );
-    if (!cleanName) return alert("Escribe tu nombre.");
-    if (!cleanPhone) return alert("Escribe tu teléfono.");
-    if (!cleanAddress) return alert("Escribe tu dirección.");
     if (missingCustomField) return alert(`Completa el campo: ${missingCustomField.label}.`);
     const invalidEmailField = customFields.find(
       (field) => field.type === "email" && field.value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(field.value),
     );
     if (invalidEmailField) return alert(`El correo de ${invalidEmailField.label} no es valido.`);
-    if (!/^\d{7,15}$/.test(cleanPhone))
+    if (cleanPhone && !/^\d{7,15}$/.test(cleanPhone))
       return alert("Teléfono inválido. Usa solo números.");
     if (!store.whatsapp)
       return alert("Esta tienda no tiene WhatsApp configurado.");
@@ -898,7 +920,7 @@ const CatalogView: React.FC = () => {
         subtotal: it.unitPrice * it.qty,
       }));
 
-      const orderTotal = total; // ya incluye envío
+      let orderTotal = total; // ya incluye envío
       const clientRef = doc(db, "stores", store.id, "clients", cleanPhone);
       const orderRef = doc(collection(db, "stores", store.id, "orders"));
 
@@ -994,6 +1016,8 @@ const CatalogView: React.FC = () => {
         notes: customerNotes.trim() || "",
         customerType: isWholesaleCatalog ? "wholesale" : "retail",
         items,
+        originalSubtotal,
+        discount,
         subtotal,
         shippingMethod: selectedShipping ?? null,
         shippingCost,
@@ -1008,6 +1032,8 @@ const CatalogView: React.FC = () => {
       if (!orderResponse.ok) {
         throw new Error(orderResult.error || "No se pudo registrar el pedido.");
       }
+      const confirmed = orderResult.calculation || ruleSummary;
+      orderTotal = Number(confirmed.total ?? orderTotal);
 
       // Mensaje de WhatsApp
       const lines: string[] = [];
@@ -1016,15 +1042,15 @@ const CatalogView: React.FC = () => {
       lines.push(`Tipo de cliente: *${isWholesaleCatalog ? "Mayorista" : "Público general"}*`);
       lines.push(`Pedido ID: ${orderRef.id}`);
       lines.push("");
-      lines.push(`👤 Cliente: *${cleanName}*`);
-      lines.push(`📞 Tel: ${cleanPhone}`);
-      lines.push(`📍 Dirección: ${cleanAddress}`);
+      if (checkoutFieldById.has("customer_name")) lines.push(`👤 Cliente: *${cleanName || "Sin nombre"}*`);
+      if (checkoutFieldById.has("customer_phone")) lines.push(`📞 Tel: ${cleanPhone}`);
+      if (checkoutFieldById.has("customer_address")) lines.push(`📍 Dirección: ${cleanAddress}`);
       customFields
-        .filter((field) => field.value)
+        .filter((field) => field.value && !["customer_name", "customer_phone", "customer_address", "order_notes"].includes(field.id))
         .forEach((field) => {
           lines.push(`${field.label}: ${field.value}`);
         });
-      if (customerNotes.trim()) lines.push(`📝 Notas: ${customerNotes.trim()}`);
+      if (checkoutFieldById.has("order_notes") && customerNotes.trim()) lines.push(`📝 Notas: ${customerNotes.trim()}`);
       lines.push("");
       lines.push("📦 *Productos*:");
       resolvedCartItems.forEach((it) => {
@@ -1034,10 +1060,14 @@ const CatalogView: React.FC = () => {
         );
       });
       lines.push("");
-      lines.push(`🧾 Subtotal: ${formatCOP(subtotal)}`);
+      if (Number(confirmed.discount || 0) > 0) {
+        lines.push(`🧾 Subtotal original: ${formatCOP(Number(confirmed.originalSubtotal || 0))}`);
+        (confirmed.appliedRules || []).filter((rule: any) => rule.kind === "pricing").forEach((rule: any) => lines.push(`🏷️ ${rule.name}: -${formatCOP(rule.amount)}`));
+      }
+      lines.push(`🧾 Subtotal: ${formatCOP(Number(confirmed.subtotal || 0))}`);
       if (shippingConfig.enabled && selectedShipping) {
         const label = SHIPPING_LABELS[selectedShipping].label;
-        lines.push(`🚚 Envío (${label}): ${shippingCost === 0 ? "Gratis" : formatCOP(shippingCost)}`);
+        lines.push(`🚚 Envío (${label}): ${Number(confirmed.shippingCost || 0) === 0 ? "Gratis" : formatCOP(Number(confirmed.shippingCost || 0))}`);
       } else if (shippingConfig.enabled && !cashOnDeliveryAvailable && shippingConfig.methods.includes("cod")) {
         lines.push("⚠️ Pago contra entrega: no disponible para todos los productos. Coordinar pago y envío.");
       }
@@ -1973,8 +2003,9 @@ const CatalogView: React.FC = () => {
                 <div className="border-t pt-4 space-y-2">
                   <div className="flex items-center justify-between text-sm text-gray-500">
                     <span>Subtotal</span>
-                    <span className="font-bold">{formatCOP(subtotal)}</span>
+                    <span className="font-bold">{formatCOP(originalSubtotal)}</span>
                   </div>
+                  {discount > 0 ? <div className="flex items-center justify-between text-sm text-green-600"><span>Promocion aplicada</span><span className="font-bold">-{formatCOP(discount)}</span></div> : null}
                   {shippingConfig.enabled && selectedShipping && !shippingConfig.hidePrices ? (
                     <div className="flex items-center justify-between text-sm text-gray-500">
                       <span>Envío ({SHIPPING_LABELS[selectedShipping].label})</span>
@@ -1998,38 +2029,38 @@ const CatalogView: React.FC = () => {
               <div className="space-y-3">
                 <div className="text-sm font-extrabold text-gray-900">Tus datos</div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-semibold text-gray-600">Nombre</label>
+                  {checkoutFieldById.get("customer_name") ? <div>
+                    <label className="text-xs font-semibold text-gray-600">{checkoutFieldById.get("customer_name")!.label}{checkoutFieldById.get("customer_name")!.required ? " *" : ""}</label>
                     <input
                       className="w-full mt-1 p-3 border rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                      placeholder="Tu nombre"
+                      placeholder={checkoutFieldById.get("customer_name")!.placeholder || "Tu nombre"}
                       value={customerName}
                       onChange={(e) => setCustomerName(e.target.value)}
                     />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-gray-600">Teléfono</label>
+                  </div> : null}
+                  {checkoutFieldById.get("customer_phone") ? <div>
+                    <label className="text-xs font-semibold text-gray-600">{checkoutFieldById.get("customer_phone")!.label}{checkoutFieldById.get("customer_phone")!.required ? " *" : ""}</label>
                     <input
                       className="w-full mt-1 p-3 border rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                      placeholder="Solo números"
+                      placeholder={checkoutFieldById.get("customer_phone")!.placeholder || "Solo números"}
                       value={customerPhone}
                       onChange={(e) => setCustomerPhone(e.target.value)}
                       inputMode="numeric"
                     />
-                  </div>
+                  </div> : null}
                 </div>
-                <div>
-                  <label className="text-xs font-semibold text-gray-600">Dirección</label>
+                {checkoutFieldById.get("customer_address") ? <div>
+                  <label className="text-xs font-semibold text-gray-600">{checkoutFieldById.get("customer_address")!.label}{checkoutFieldById.get("customer_address")!.required ? " *" : ""}</label>
                   <input
                     className="w-full mt-1 p-3 border rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                    placeholder="Tu dirección"
+                    placeholder={checkoutFieldById.get("customer_address")!.placeholder || "Tu dirección"}
                     value={customerAddress}
                     onChange={(e) => setCustomerAddress(e.target.value)}
                   />
-                </div>
-                {checkoutFields.length > 0 ? (
+                </div> : null}
+                {customCheckoutFields.length > 0 ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {checkoutFields.map((field) => {
+                    {customCheckoutFields.map((field) => {
                       const value = customFieldValues[field.id] || "";
                       const setValue = (nextValue: string) =>
                         setCustomFieldValues((current) => ({
@@ -2095,18 +2126,18 @@ const CatalogView: React.FC = () => {
                     })}
                   </div>
                 ) : null}
-                <div>
+                {checkoutFieldById.get("order_notes") ? <div>
                   <label className="text-xs font-semibold text-gray-600">
-                    Notas (opcional)
+                    {checkoutFieldById.get("order_notes")!.label}{checkoutFieldById.get("order_notes")!.required ? " *" : " (opcional)"}
                   </label>
                   <textarea
                     className="w-full mt-1 p-3 border rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                    placeholder="Indicaciones para el pedido"
+                    placeholder={checkoutFieldById.get("order_notes")!.placeholder || "Indicaciones para el pedido"}
                     value={customerNotes}
                     onChange={(e) => setCustomerNotes(e.target.value)}
                     rows={3}
                   />
-                </div>
+                </div> : null}
               </div>
             </div>
 

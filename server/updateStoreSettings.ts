@@ -4,7 +4,7 @@ import WebSocket from "ws";
 const allowedColumns = new Set([
   "name", "slug", "description", "whatsapp", "status", "brand_color",
   "logo_url", "banner_url", "instagram", "facebook", "contact_email",
-  "phone", "location", "shipping_settings", "checkout_fields", "updated_at",
+  "phone", "location", "shipping_settings", "checkout_fields", "commerce_rules", "updated_at",
 ]);
 
 export async function updateStoreSettings(

@@ -7,6 +7,7 @@ import { buildCatalogShareHtml } from './server/catalogShare';
 import activateSubscription from './api/activate-subscription';
 import { updateStoreSettings } from './server/updateStoreSettings';
 import { createPublicOrder, updateOrderStatus } from './server/orderActions';
+import { saveProduct } from './server/saveProduct';
 
 const readJsonBody = async (req: any) =>
   new Promise<Record<string, unknown>>((resolve, reject) => {
@@ -124,6 +125,24 @@ export default defineConfig(({ mode }) => {
                 res.statusCode = 500;
                 res.setHeader('Content-Type', 'application/json');
                 res.end(JSON.stringify({ ok: false, error: error?.message }));
+              }
+            });
+
+            server.middlewares.use('/api/product-save', async (req, res, next) => {
+              if (req.method !== 'POST') return next();
+              try {
+                const result = await saveProduct(
+                  await readJsonBody(req),
+                  req.headers.authorization,
+                  env,
+                );
+                res.statusCode = result.status;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify(result));
+              } catch (error: any) {
+                res.statusCode = 500;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ ok: false, error: error?.message || 'No se pudo guardar el producto.' }));
               }
             });
 
