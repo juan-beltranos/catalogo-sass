@@ -1062,7 +1062,17 @@ const CatalogView: React.FC = () => {
       lines.push("");
       if (Number(confirmed.discount || 0) > 0) {
         lines.push(`🧾 Subtotal original: ${formatCOP(Number(confirmed.originalSubtotal || 0))}`);
-        (confirmed.appliedRules || []).filter((rule: any) => rule.kind === "pricing").forEach((rule: any) => lines.push(`🏷️ ${rule.name}: -${formatCOP(rule.amount)}`));
+        const pricingRules = (confirmed.appliedRules || []).filter(
+          (rule: any) => rule.kind === "pricing" && Number(rule.amount || 0) > 0
+        );
+        if (pricingRules.length) {
+          pricingRules.forEach((rule: any) =>
+            lines.push(`🏷️ ${rule.name}: -${formatCOP(Number(rule.amount))}`)
+          );
+        } else {
+          // Mantiene visible el descuento aunque una respuesta antigua de la API no incluya appliedRules.
+          lines.push(`🏷️ Precio por cantidad: -${formatCOP(Number(confirmed.discount))}`);
+        }
       }
       lines.push(`🧾 Subtotal: ${formatCOP(Number(confirmed.subtotal || 0))}`);
       if (shippingConfig.enabled && selectedShipping) {
