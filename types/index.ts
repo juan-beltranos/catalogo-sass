@@ -79,7 +79,7 @@ export type ShippingRule = {
     name: string;
     enabled: boolean;
     priority: number;
-    shippingMethod?: "all" | "cod" | "carrier";
+    shippingMethod?: "all" | "pickup" | "local" | "national";
     condition: RuleCondition;
     action: "fixed_cost" | "free_shipping" | "amount_discount";
     value: number;
@@ -142,7 +142,7 @@ export type Order = {
     originalSubtotal?: number;
     subtotal?: number;
     discount?: number;
-    shippingMethod?: "cod" | "carrier" | null;
+    shippingMethod?: "pickup" | "local" | "national" | null;
     shippingCost?: number;
     appliedRules?: { id: string; name: string; amount: number; kind: "pricing" | "shipping" }[];
     createdAt?: any;

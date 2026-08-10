@@ -92,9 +92,10 @@ const SettingsView: React.FC = () => {
 
     // form — envíos
     const [shippingEnabled, setShippingEnabled] = useState(false);
-    const [shippingMethods, setShippingMethods] = useState<string[]>(["cod"]); // cod = contra entrega, carrier = transportadora
-    const [shippingCostCOD, setShippingCostCOD] = useState("0");
-    const [shippingCostCarrier, setShippingCostCarrier] = useState("0");
+    const [shippingMethods, setShippingMethods] = useState<string[]>(["pickup"]);
+    const [shippingCostPickup, setShippingCostPickup] = useState("0");
+    const [shippingCostLocal, setShippingCostLocal] = useState("0");
+    const [shippingCostNational, setShippingCostNational] = useState("0");
     const [shippingNote, setShippingNote] = useState("");
     const [shippingHidePrices, setShippingHidePrices] = useState(false);
     const [checkoutFields, setCheckoutFields] = useState<CheckoutFieldConfig[]>([]);
@@ -146,9 +147,10 @@ const SettingsView: React.FC = () => {
 
             // cargar configuración de envíos
             setShippingEnabled(data.shippingEnabled ?? false);
-            setShippingMethods(data.shippingMethods ?? ["cod"]);
-            setShippingCostCOD(String(data.shippingCostCOD ?? 0));
-            setShippingCostCarrier(String(data.shippingCostCarrier ?? 0));
+            setShippingMethods((data.shippingMethods ?? ["pickup"]).map((method: string) => method === "cod" ? "pickup" : method === "carrier" ? "local" : method));
+            setShippingCostPickup(String(data.shippingCostPickup ?? data.shippingCostCOD ?? 0));
+            setShippingCostLocal(String(data.shippingCostLocal ?? data.shippingCostCarrier ?? 0));
+            setShippingCostNational(String(data.shippingCostNational ?? 0));
             setShippingNote(data.shippingNote ?? "");
             setShippingHidePrices(data.shippingHidePrices ?? false);
             setCheckoutFields(normalizeCheckoutFields(data.checkoutFields ?? []));
@@ -340,8 +342,9 @@ const SettingsView: React.FC = () => {
                 // envíos
                 shippingEnabled,
                 shippingMethods,
-                shippingCostCOD: Number(shippingCostCOD) || 0,
-                shippingCostCarrier: Number(shippingCostCarrier) || 0,
+                shippingCostPickup: Number(shippingCostPickup) || 0,
+                shippingCostLocal: Number(shippingCostLocal) || 0,
+                shippingCostNational: Number(shippingCostNational) || 0,
                 shippingNote: shippingNote.trim(),
                 shippingHidePrices,
                 countryCode,
@@ -378,8 +381,9 @@ const SettingsView: React.FC = () => {
                     shipping_settings: {
                         enabled: storeChanges.shippingEnabled,
                         methods: storeChanges.shippingMethods,
-                        costCOD: storeChanges.shippingCostCOD,
-                        costCarrier: storeChanges.shippingCostCarrier,
+                        costPickup: storeChanges.shippingCostPickup,
+                        costLocal: storeChanges.shippingCostLocal,
+                        costNational: storeChanges.shippingCostNational,
                         note: storeChanges.shippingNote,
                         hidePrices: storeChanges.shippingHidePrices,
                         countryCode,
@@ -450,7 +454,7 @@ const SettingsView: React.FC = () => {
     }
 
     return (
-        <div className="space-y-8 max-w-3xl">
+        <div className="space-y-4 max-w-3xl pb-20">
 
             <div>
                 <h1 className="text-2xl font-bold text-gray-900">Configuración de la tienda</h1>
@@ -459,6 +463,12 @@ const SettingsView: React.FC = () => {
                 </p>
             </div>
 
+            <SettingsAccordion
+                title="Identidad visual"
+                description="Logo, banner y color principal de tu catálogo."
+                icon="fa-solid fa-palette"
+                defaultOpen
+            >
             {/* ── Logo ── */}
             <div className="bg-white border rounded-xl p-6 space-y-4">
                 <h2 className="font-bold text-gray-900">Logo del negocio</h2>
@@ -578,7 +588,14 @@ const SettingsView: React.FC = () => {
                 </p>
             </div>
 
+            </SettingsAccordion>
+
             {/* ── Información general ── */}
+            <SettingsAccordion
+                title="Información del negocio"
+                description="Nombre, enlace público y descripción."
+                icon="fa-solid fa-store"
+            >
             <div className="bg-white border rounded-xl p-6 space-y-4">
                 <h2 className="font-bold text-gray-900">Información general</h2>
 
@@ -613,8 +630,14 @@ const SettingsView: React.FC = () => {
                     />
                 </div>
             </div>
+            </SettingsAccordion>
 
             {/* ── Catálogo público ── */}
+            <SettingsAccordion
+                title="Catálogos y visibilidad"
+                description="Comparte enlaces y controla si la tienda está visible."
+                icon="fa-solid fa-link"
+            >
             <div className="bg-white border rounded-xl p-6 space-y-4">
                 <div>
                     <h2 className="font-bold text-gray-900">Comparte tus catálogos</h2>
@@ -690,7 +713,13 @@ const SettingsView: React.FC = () => {
                     </span>
                 </label>
             </div>
+            </SettingsAccordion>
 
+            <SettingsAccordion
+                title="Precios y entregas"
+                description="Reglas comerciales, tarifas y métodos de entrega."
+                icon="fa-solid fa-truck-fast"
+            >
             <CommerceRulesEditor value={commerceRules} onChange={setCommerceRules} />
 
             {/* ── Opciones de envío (NUEVO) ── */}
@@ -729,11 +758,11 @@ const SettingsView: React.FC = () => {
                             </p>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
 
-                                {/* Contra entrega */}
+                                {/* Recoger en tienda */}
                                 <div
-                                    onClick={() => toggleShippingMethod("cod")}
+                                    onClick={() => toggleShippingMethod("pickup")}
                                     className={`rounded-xl border-2 p-4 cursor-pointer transition select-none ${
-                                        shippingMethods.includes("cod")
+                                        shippingMethods.includes("pickup")
                                             ? "border-indigo-500 bg-indigo-50"
                                             : "border-gray-200 hover:border-gray-300"
                                     }`}
@@ -741,30 +770,30 @@ const SettingsView: React.FC = () => {
                                     <div className="flex items-center justify-between mb-2">
                                         <div className="flex items-center gap-2">
                                             <div className="h-9 w-9 rounded-lg bg-green-100 flex items-center justify-center">
-                                                <i className="fa-solid fa-money-bill-wave text-green-600" />
+                                                <i className="fa-solid fa-store text-amber-600" />
                                             </div>
-                                            <span className="font-bold text-gray-900 text-sm">Contra entrega</span>
+                                            <span className="font-bold text-gray-900 text-sm">Recoger en tienda</span>
                                         </div>
                                         <div className={`h-5 w-5 rounded-full border-2 flex items-center justify-center ${
-                                            shippingMethods.includes("cod")
+                                            shippingMethods.includes("pickup")
                                                 ? "border-indigo-500 bg-indigo-500"
                                                 : "border-gray-300"
                                         }`}>
-                                            {shippingMethods.includes("cod") && (
+                                            {shippingMethods.includes("pickup") && (
                                                 <i className="fa-solid fa-check text-white text-[10px]" />
                                             )}
                                         </div>
                                     </div>
                                     <p className="text-xs text-gray-500">
-                                        El cliente paga al recibir el pedido.
+                                        El cliente recoge su pedido en el establecimiento.
                                     </p>
                                 </div>
 
-                                {/* Transportadora */}
+                                {/* Entrega local */}
                                 <div
-                                    onClick={() => toggleShippingMethod("carrier")}
+                                    onClick={() => toggleShippingMethod("local")}
                                     className={`rounded-xl border-2 p-4 cursor-pointer transition select-none ${
-                                        shippingMethods.includes("carrier")
+                                        shippingMethods.includes("local")
                                             ? "border-indigo-500 bg-indigo-50"
                                             : "border-gray-200 hover:border-gray-300"
                                     }`}
@@ -772,22 +801,53 @@ const SettingsView: React.FC = () => {
                                     <div className="flex items-center justify-between mb-2">
                                         <div className="flex items-center gap-2">
                                             <div className="h-9 w-9 rounded-lg bg-blue-100 flex items-center justify-center">
-                                                <i className="fa-solid fa-truck text-blue-600" />
+                                                <i className="fa-solid fa-motorcycle text-blue-600" />
                                             </div>
-                                            <span className="font-bold text-gray-900 text-sm">Envío con transportadora</span>
+                                            <span className="font-bold text-gray-900 text-sm">Entrega local</span>
                                         </div>
                                         <div className={`h-5 w-5 rounded-full border-2 flex items-center justify-center ${
-                                            shippingMethods.includes("carrier")
+                                            shippingMethods.includes("local")
                                                 ? "border-indigo-500 bg-indigo-500"
                                                 : "border-gray-300"
                                         }`}>
-                                            {shippingMethods.includes("carrier") && (
+                                            {shippingMethods.includes("local") && (
                                                 <i className="fa-solid fa-check text-white text-[10px]" />
                                             )}
                                         </div>
                                     </div>
                                     <p className="text-xs text-gray-500">
-                                        El pedido se envía por empresa de transporte.
+                                        Entrega dentro de la ciudad o zona de cobertura.
+                                    </p>
+                                </div>
+
+                                {/* Envio nacional */}
+                                <div
+                                    onClick={() => toggleShippingMethod("national")}
+                                    className={`rounded-xl border-2 p-4 cursor-pointer transition select-none ${
+                                        shippingMethods.includes("national")
+                                            ? "border-indigo-500 bg-indigo-50"
+                                            : "border-gray-200 hover:border-gray-300"
+                                    }`}
+                                >
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-2">
+                                            <div className="h-9 w-9 rounded-lg bg-purple-100 flex items-center justify-center">
+                                                <i className="fa-solid fa-map-location-dot text-purple-600" />
+                                            </div>
+                                            <span className="font-bold text-gray-900 text-sm">Envío nacional</span>
+                                        </div>
+                                        <div className={`h-5 w-5 rounded-full border-2 flex items-center justify-center ${
+                                            shippingMethods.includes("national")
+                                                ? "border-indigo-500 bg-indigo-500"
+                                                : "border-gray-300"
+                                        }`}>
+                                            {shippingMethods.includes("national") && (
+                                                <i className="fa-solid fa-check text-white text-[10px]" />
+                                            )}
+                                        </div>
+                                    </div>
+                                    <p className="text-xs text-gray-500">
+                                        El pedido se envía a otras ciudades del país.
                                     </p>
                                 </div>
                             </div>
@@ -832,40 +892,60 @@ const SettingsView: React.FC = () => {
                                         Escribe 0 si el envío es gratis para ese método.
                                     </p>
 
-                                    {shippingMethods.includes("cod") && (
+                                    {shippingMethods.includes("pickup") && (
                                         <div className="flex items-center gap-3">
                                             <div className="h-8 w-8 rounded-lg bg-green-100 flex items-center justify-center shrink-0">
-                                                <i className="fa-solid fa-money-bill-wave text-green-600 text-xs" />
+                                                <i className="fa-solid fa-store text-amber-600 text-xs" />
                                             </div>
-                                            <label className="text-sm text-gray-700 w-36 shrink-0">Contra entrega</label>
+                                            <label className="text-sm text-gray-700 w-36 shrink-0">Recoger en tienda</label>
                                             <div className="flex items-center border rounded-lg overflow-hidden flex-1">
                                                 <span className="px-3 py-2 bg-gray-50 text-gray-500 text-sm border-r">$</span>
                                                 <input
                                                     type="number"
                                                     min="0"
                                                     className="flex-1 p-2 text-sm focus:outline-none"
-                                                    value={shippingCostCOD}
-                                                    onChange={(e) => setShippingCostCOD(e.target.value)}
+                                                    value={shippingCostPickup}
+                                                    onChange={(e) => setShippingCostPickup(e.target.value)}
                                                     placeholder="0"
                                                 />
                                             </div>
                                         </div>
                                     )}
 
-                                    {shippingMethods.includes("carrier") && (
+                                    {shippingMethods.includes("local") && (
                                         <div className="flex items-center gap-3">
                                             <div className="h-8 w-8 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
-                                                <i className="fa-solid fa-truck text-blue-600 text-xs" />
+                                                <i className="fa-solid fa-motorcycle text-blue-600 text-xs" />
                                             </div>
-                                            <label className="text-sm text-gray-700 w-36 shrink-0">Transportadora</label>
+                                            <label className="text-sm text-gray-700 w-36 shrink-0">Entrega local</label>
                                             <div className="flex items-center border rounded-lg overflow-hidden flex-1">
                                                 <span className="px-3 py-2 bg-gray-50 text-gray-500 text-sm border-r">$</span>
                                                 <input
                                                     type="number"
                                                     min="0"
                                                     className="flex-1 p-2 text-sm focus:outline-none"
-                                                    value={shippingCostCarrier}
-                                                    onChange={(e) => setShippingCostCarrier(e.target.value)}
+                                                    value={shippingCostLocal}
+                                                    onChange={(e) => setShippingCostLocal(e.target.value)}
+                                                    placeholder="0"
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {shippingMethods.includes("national") && (
+                                        <div className="flex items-center gap-3">
+                                            <div className="h-8 w-8 rounded-lg bg-purple-100 flex items-center justify-center shrink-0">
+                                                <i className="fa-solid fa-map-location-dot text-purple-600 text-xs" />
+                                            </div>
+                                            <label className="text-sm text-gray-700 w-36 shrink-0">Envío nacional</label>
+                                            <div className="flex items-center border rounded-lg overflow-hidden flex-1">
+                                                <span className="px-3 py-2 bg-gray-50 text-gray-500 text-sm border-r">$</span>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    className="flex-1 p-2 text-sm focus:outline-none"
+                                                    value={shippingCostNational}
+                                                    onChange={(e) => setShippingCostNational(e.target.value)}
                                                     placeholder="0"
                                                 />
                                             </div>
@@ -901,7 +981,13 @@ const SettingsView: React.FC = () => {
                     </div>
                 )}
             </div>
+            </SettingsAccordion>
 
+            <SettingsAccordion
+                title="Formulario de compra"
+                description={`${checkoutFields.filter((field) => field.enabled).length} campos visibles en el checkout.`}
+                icon="fa-solid fa-rectangle-list"
+            >
             <div className="bg-white border rounded-xl p-6 space-y-5">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
@@ -1058,8 +1144,14 @@ const SettingsView: React.FC = () => {
                     </div>
                 )}
             </div>
+            </SettingsAccordion>
 
             {/* ── Redes sociales y contacto ── */}
+            <SettingsAccordion
+                title="Contacto y ubicación"
+                description="País, WhatsApp, redes sociales y dirección."
+                icon="fa-solid fa-address-card"
+            >
             <div className="bg-white border rounded-xl p-6 space-y-4">
                 <h2 className="font-bold text-gray-900">Redes sociales y contacto</h2>
 
@@ -1173,11 +1265,12 @@ const SettingsView: React.FC = () => {
                     />
                 </div>
             </div>
+            </SettingsAccordion>
 
             {/* ── Guardar ── */}
             {error && <div className="text-sm text-red-600">{error}</div>}
 
-            <div className="flex justify-end">
+            <div className="sticky bottom-4 z-20 flex justify-end rounded-xl border border-gray-200 bg-white/95 p-3 shadow-lg backdrop-blur">
                 <button
                     onClick={handleSave}
                     disabled={saving}
@@ -1187,6 +1280,41 @@ const SettingsView: React.FC = () => {
                 </button>
             </div>
         </div>
+    );
+};
+
+type SettingsAccordionProps = {
+    title: string;
+    description: string;
+    icon: string;
+    defaultOpen?: boolean;
+    children: React.ReactNode;
+};
+
+const SettingsAccordion = ({ title, description, icon, defaultOpen = false, children }: SettingsAccordionProps) => {
+    const [isOpen, setIsOpen] = useState(defaultOpen);
+
+    return (
+    <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+        <button
+            type="button"
+            onClick={() => setIsOpen((current) => !current)}
+            aria-expanded={isOpen}
+            className="flex w-full items-center gap-3 px-5 py-4 text-left transition hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
+        >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                <i className={icon} />
+            </span>
+            <span className="min-w-0 flex-1">
+                <span className="block font-bold text-gray-900">{title}</span>
+                <span className="mt-0.5 block text-xs text-gray-500">{description}</span>
+            </span>
+            <i className={`fa-solid fa-chevron-down text-sm text-gray-400 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`} />
+        </button>
+        {isOpen && <div className="space-y-4 border-t border-gray-100 bg-gray-50/60 p-4 sm:p-5">
+            {children}
+        </div>}
+    </section>
     );
 };
 

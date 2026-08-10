@@ -3,7 +3,7 @@ import type { CommerceRules, PricingRule, RuleCondition, ShippingRule } from "..
 export type CommerceRuleInput = {
   quantity: number;
   subtotal: number;
-  shippingMethod?: "cod" | "carrier" | null;
+  shippingMethod?: "pickup" | "local" | "national" | null;
   baseShippingCost?: number;
 };
 
@@ -46,7 +46,9 @@ export const normalizeCommerceRules = (value: any): CommerceRules => ({
   shipping: (Array.isArray(value?.shipping) ? value.shipping : []).map((rule: any, index: number): ShippingRule => ({
     id: String(rule.id || `shipping_${index}`), name: String(rule.name || "Regla de envio"),
     enabled: rule.enabled !== false, priority: Number(rule.priority || 0), condition: rule.condition || {},
-    shippingMethod: ["cod", "carrier"].includes(rule.shippingMethod) ? rule.shippingMethod : "all",
+    shippingMethod: rule.shippingMethod === "cod" ? "pickup"
+      : rule.shippingMethod === "carrier" ? "local"
+      : ["pickup", "local", "national"].includes(rule.shippingMethod) ? rule.shippingMethod : "all",
     action: ["fixed_cost", "free_shipping", "amount_discount"].includes(rule.action) ? rule.action : "fixed_cost",
     value: money(rule.value), stopProcessing: rule.stopProcessing !== false,
   })),

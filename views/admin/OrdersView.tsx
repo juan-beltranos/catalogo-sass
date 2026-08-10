@@ -38,14 +38,30 @@ const shippingMethodMeta: Record<
   string,
   { label: string; icon: string; badge: string }
 > = {
+  pickup: {
+    label: "Recoger en tienda",
+    icon: "fa-solid fa-store",
+    badge: "bg-amber-100 text-amber-700",
+  },
+  local: {
+    label: "Entrega local",
+    icon: "fa-solid fa-motorcycle",
+    badge: "bg-blue-100 text-blue-700",
+  },
+  national: {
+    label: "Envío nacional",
+    icon: "fa-solid fa-map-location-dot",
+    badge: "bg-purple-100 text-purple-700",
+  },
+  // Compatibilidad visual con pedidos creados antes del cambio de nombres.
   cod: {
-    label: "Contra entrega",
-    icon: "fa-solid fa-money-bill-wave",
-    badge: "bg-green-100 text-green-700",
+    label: "Recoger en tienda",
+    icon: "fa-solid fa-store",
+    badge: "bg-amber-100 text-amber-700",
   },
   carrier: {
-    label: "Transportadora",
-    icon: "fa-solid fa-truck",
+    label: "Entrega local",
+    icon: "fa-solid fa-motorcycle",
     badge: "bg-blue-100 text-blue-700",
   },
 };

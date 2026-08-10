@@ -64,22 +64,28 @@ export async function createPublicOrder(input: any, env: Env = process.env) {
   order.items = canonicalItems;
   const quantity = canonicalItems.reduce((sum: number, item: any) => sum + item.qty, 0);
   const originalSubtotal = canonicalItems.reduce((sum: number, item: any) => sum + item.subtotal, 0);
-  const method = order.shippingMethod === "cod" || order.shippingMethod === "carrier" ? order.shippingMethod : null;
-  if (method === "cod" && canonicalItems.some((item: any) => productsById.get(String(item.productId))?.allow_cash_on_delivery === false)) {
-    return { ok: false, status: 400, error: "Uno o mas productos no permiten pago contra entrega." };
-  }
+  const requestedMethod = order.shippingMethod === "cod" ? "pickup"
+    : order.shippingMethod === "carrier" ? "local" : order.shippingMethod;
+  const method = ["pickup", "local", "national"].includes(requestedMethod) ? requestedMethod : null;
   const shipping = store.shipping_settings || {};
-  const allowedMethods = Array.isArray(shipping.methods) ? shipping.methods : ["cod"];
+  const allowedMethods = (Array.isArray(shipping.methods) ? shipping.methods : ["pickup"])
+    .map((item: string) => item === "cod" ? "pickup" : item === "carrier" ? "local" : item);
+  if (shipping.enabled && allowedMethods.length > 0 && !method) {
+    return { ok: false, status: 400, error: "Selecciona un metodo de envio valido." };
+  }
   if (shipping.enabled && method && !allowedMethods.includes(method)) {
     return { ok: false, status: 400, error: "Metodo de envio no disponible." };
   }
   const baseShippingCost = !shipping.enabled || !method ? 0
-    : method === "cod" ? Number(shipping.costCOD || 0) : Number(shipping.costCarrier || 0);
+    : method === "pickup" ? Number(shipping.costPickup ?? shipping.costCOD ?? 0)
+    : method === "local" ? Number(shipping.costLocal ?? shipping.costCarrier ?? 0)
+    : Number(shipping.costNational || 0);
   const calculated = evaluateCommerceRules({ quantity, subtotal: originalSubtotal, shippingMethod: method, baseShippingCost }, store.commerce_rules);
   order.originalSubtotal = calculated.originalSubtotal;
   order.discount = calculated.discount;
   order.subtotal = calculated.subtotal;
   order.shippingCost = calculated.shippingCost;
+  order.shippingMethod = method;
   order.total = calculated.total;
   order.appliedRules = calculated.appliedRules;
 
