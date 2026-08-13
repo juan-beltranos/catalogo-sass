@@ -328,6 +328,7 @@ const CatalogView: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [productsLoading, setProductsLoading] = useState(false);
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -459,15 +460,13 @@ const CatalogView: React.FC = () => {
 
   const sortProducts = (items: Product[]) => {
     return [...items].sort((a: any, b: any) => {
-      const aHasOrder = typeof a.order === "number";
-      const bHasOrder = typeof b.order === "number";
-
-      if (aHasOrder && bHasOrder) return a.order - b.order;
-      if (aHasOrder) return -1;
-      if (bHasOrder) return 1;
-
-      const aTime = a.createdAt?.seconds ?? 0;
-      const bTime = b.createdAt?.seconds ?? 0;
+      const getCreatedAtTime = (value: any) => {
+        if (typeof value?.seconds === "number") return value.seconds * 1000;
+        const parsed = new Date(value ?? 0).getTime();
+        return Number.isNaN(parsed) ? 0 : parsed;
+      };
+      const aTime = getCreatedAtTime(a.createdAt);
+      const bTime = getCreatedAtTime(b.createdAt);
       return bTime - aTime;
     });
   };
@@ -635,6 +634,7 @@ const CatalogView: React.FC = () => {
   }, [search]);
 
   const storeIdRef = useRef<string | null>(null);
+  const productsRequestIdRef = useRef(0);
   useEffect(() => {
     if (!store || catalogUnavailableReason) return;
     storeIdRef.current = store.id;
@@ -648,14 +648,15 @@ const CatalogView: React.FC = () => {
 
   const fetchFirstPage = useCallback(
     async (storeId: string, categoryId: string) => {
+      const requestId = ++productsRequestIdRef.current;
       const cached = getCategoryCache(storeId, categoryId);
       if (cached) {
         setProducts(cached.products);
         setHasMore(cached.hasMore);
-        setLoading(false);
+        setProductsLoading(false);
         return;
       }
-      setLoading(true);
+      setProductsLoading(true);
       setQueryError(null);
       const baseRef = collection(db, "stores", storeId, "products");
       try {
@@ -664,12 +665,12 @@ const CatalogView: React.FC = () => {
         if (categoryId !== "all")
           constraints.push(where("categoryId", "==", categoryId));
         constraints.push(
-          orderBy("order", "asc"),
           orderBy("createdAt", "desc"),
           limit(PAGE_SIZE + 1),
         );
         const qProds = query(baseRef, ...constraints);
         const snap = await getDocs(qProds);
+        if (requestId !== productsRequestIdRef.current) return;
         const allProducts = sortProducts(snap.docs.map((d) => ({
             id: d.id,
             ...(d.data() as any),
@@ -683,6 +684,7 @@ const CatalogView: React.FC = () => {
         setProducts(pageProducts);
         setHasMore(more);
       } catch (e: any) {
+        if (requestId !== productsRequestIdRef.current) return;
         console.error("fetchFirstPage error:", e);
         const msg = String(e?.message || "")
           .toLowerCase()
@@ -693,7 +695,7 @@ const CatalogView: React.FC = () => {
         setProducts([]);
         setHasMore(false);
       } finally {
-        setLoading(false);
+        if (requestId === productsRequestIdRef.current) setProductsLoading(false);
       }
     },
     [],
@@ -715,7 +717,6 @@ const CatalogView: React.FC = () => {
       if (activeCategoryId !== "all")
         constraints.push(where("categoryId", "==", activeCategoryId));
       constraints.push(
-        orderBy("order", "asc"),
         orderBy("createdAt", "desc"),
         offset(cached.products.length),
         limit(PAGE_SIZE + 1),
@@ -1440,7 +1441,12 @@ const CatalogView: React.FC = () => {
           </div>
         ) : null}
 
-        {filteredProducts.length === 0 ? (
+        {productsLoading ? (
+          <div className="bg-white border border-gray-100 rounded-2xl p-6 text-gray-500 shadow-sm flex items-center gap-3">
+            <span className="h-4 w-4 rounded-full border-2 border-gray-300 border-t-gray-700 animate-spin" />
+            Cargando productos...
+          </div>
+        ) : filteredProducts.length === 0 ? (
           <div className="bg-white border border-gray-100 rounded-2xl p-6 text-gray-500 shadow-sm">
             No hay productos en esta categoría.
           </div>
