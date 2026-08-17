@@ -124,7 +124,7 @@ const Sidebar: React.FC<SidebarCustomProps> = ({
 
   return (
     <aside className="w-64 bg-white border-r border-gray-200 flex flex-col h-full overflow-y-auto">
-      {!canUseAdmin && !hideSubscription && (
+      {/* {!canUseAdmin && !hideSubscription && (
         <div className="m-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
           <div className="flex items-start gap-2">
             <i className="fa-solid fa-triangle-exclamation mt-0.5" />
@@ -134,7 +134,7 @@ const Sidebar: React.FC<SidebarCustomProps> = ({
             </div>
           </div>
         </div>
-      )}
+      )} */}
 
       <div className="p-4 space-y-1">
         <div className="px-4 mb-4">
