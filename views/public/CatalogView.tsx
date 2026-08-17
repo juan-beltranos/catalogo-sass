@@ -201,6 +201,12 @@ const getCatalogUnavailableReason = (
     return "inactive";
   }
 
+  // Haber adquirido una versión concede acceso permanente al catálogo,
+  // independientemente del estado posterior de la suscripción mensual.
+  if (store.catalogAccess === true) {
+    return null;
+  }
+
   /**
    * Compatibilidad para clientes antiguos de pago único.
    * Así no se bloquean tiendas viejas que no tienen los campos nuevos

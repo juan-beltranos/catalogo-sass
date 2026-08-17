@@ -70,19 +70,19 @@ const Sidebar: React.FC<SidebarCustomProps> = ({
       icon: 'fa-chart-pie',
       label: 'Dashboard',
       exact: true,
-      disabled: !canUseAdmin,
+      disabled: false,
     },
     {
       to: '/admin/products',
       icon: 'fa-box',
       label: 'Productos',
-      disabled: !canUseAdmin,
+      disabled: false,
     },
     {
       to: '/admin/categories',
       icon: 'fa-tags',
       label: 'Categorías',
-      disabled: !canUseAdmin,
+      disabled: false,
     },
     {
       to: '/admin/orders',
@@ -100,7 +100,7 @@ const Sidebar: React.FC<SidebarCustomProps> = ({
       to: '/admin/settings',
       icon: 'fa-sliders',
       label: 'Configuración',
-      disabled: !canUseAdmin,
+      disabled: false,
     },
   ];
 
@@ -130,7 +130,7 @@ const Sidebar: React.FC<SidebarCustomProps> = ({
             <i className="fa-solid fa-triangle-exclamation mt-0.5" />
             <div>
               <p className="font-bold">Acceso limitado</p>
-              <p className="mt-1">Activa tu suscripción para usar el panel.</p>
+              <p className="mt-1">Dashboard, Productos, Categorías y Configuración siguen disponibles. Activa tu suscripción para usar Pedidos y Clientes.</p>
             </div>
           </div>
         </div>

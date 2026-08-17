@@ -15,7 +15,6 @@ import ProtectedRoute from './components/auth/ProtectedRoute';
 import { AuthProvider } from './context/AuthContext';
 import RegisterView from './views/admin/RegisterView';
 import SettingsView from './views/admin/SettingsView';
-import SubscriptionView from './views/admin/SubscriptionView';
 import StoresView from './views/superadmin/StoresView';
 import SuperAdminRoute from './components/auth/SuperAdminRoute';
 import SubscriptionRoute from './components/auth/SubscriptionRoute';
@@ -45,11 +44,12 @@ const App: React.FC = () => {
             <Route element={<AdminLayout />}>
               {/* El pago siempre debe estar disponible, incluso con el plan vencido. */}
               <Route path="subscription" element={<SubscriptionOptionRoute />} />
+              {/* El contenido base comprado permanece editable sin una suscripción activa. */}
+              <Route index element={<DashboardView />} />
+              <Route path="products" element={<ProductsView />} />
+              <Route path="categories" element={<CategoriesView />} />
+              <Route path="settings" element={<SettingsView />} />
               <Route element={<SubscriptionRoute />}>
-                <Route index element={<DashboardView />} />
-                <Route path="products" element={<ProductsView />} />
-                <Route path="categories" element={<CategoriesView />} />
-                <Route path="settings" element={<SettingsView />} />
                 <Route element={<ModuleRoute />}>
                   <Route path="orders" element={<OrdersView />} />
                   <Route path="customers" element={<CustomersView />} />

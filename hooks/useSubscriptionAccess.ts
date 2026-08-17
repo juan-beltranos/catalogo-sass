@@ -44,11 +44,14 @@ export function useSubscriptionAccess(): SubscriptionAccess {
       if (error) throw error;
       const status = (data?.subscription_status ?? null) as SubscriptionAccess["status"];
       const endAt = data?.subscription_end_at ?? null;
-      // Un plan activo se permite hasta su fecha final; un trial solo mientras no expire.
+      // Los tokens compran la versión base, no una suscripción a los módulos
+      // operativos. Estos solo se habilitan con trial o pago mensual vigente.
       const hasTime = Boolean(endAt) && Date.parse(endAt) > Date.now();
-      const allowed = (status === "active" || status === "trial") && hasTime;
       const plan = (data?.plan ?? (status === "trial" ? "trial" : null)) as SubscriptionAccess["plan"];
       const registrationType = (data?.registration_type ?? (status === "trial" ? "trial" : "paid")) as SubscriptionAccess["registrationType"];
+      const allowed = hasTime && (
+        status === "trial" || (status === "active" && registrationType === "paid")
+      );
       const restrictedModules = registrationType === "token";
       const productLimit = plan === "basic" ? 30 : plan === "pro" ? 200 : null;
       const categoryLimit = plan === "basic" ? 3 : plan === "pro" ? 6 : null;

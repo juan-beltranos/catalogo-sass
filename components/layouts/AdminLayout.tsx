@@ -233,10 +233,19 @@ const AdminLayout: React.FC = () => {
   useEffect(() => {
     if (loadingStore || subscriptionAccess.loading) return;
 
-    const isSubscriptionPage = location.pathname === '/admin/subscription';
+    const alwaysAvailablePages = [
+      '/admin',
+      '/admin/subscription',
+      '/admin/products',
+      '/admin/categories',
+      '/admin/settings',
+    ];
+    const isAlwaysAvailablePage = alwaysAvailablePages.some(
+      (path) => location.pathname === path || (path !== '/admin' && location.pathname.startsWith(`${path}/`)),
+    );
 
-    if (!hasAdminAccess && !isSubscriptionPage) {
-      navigate('/admin/subscription', { replace: true });
+    if (!hasAdminAccess && !isAlwaysAvailablePage) {
+      navigate('/admin', { replace: true });
     }
   }, [loadingStore, subscriptionAccess.loading, hasAdminAccess, location.pathname, navigate]);
 
@@ -288,7 +297,7 @@ const AdminLayout: React.FC = () => {
             </button>
 
             <Link
-              to={hasAdminAccess ? '/admin' : '/admin/subscription'}
+              to="/admin"
               className="flex items-center gap-2"
             >
               <div className="bg-indigo-600 p-1.5 rounded-lg">

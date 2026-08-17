@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:subscription": "node --env-file=.env.local scripts/test-subscription-flow.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1081.0",
