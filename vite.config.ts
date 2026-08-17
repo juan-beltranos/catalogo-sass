@@ -2,12 +2,15 @@ import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { DeleteObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { registerStore } from './server/registerStore';
 import { buildCatalogShareHtml } from './server/catalogShare';
 import activateSubscription from './api/activate-subscription';
 import { updateStoreSettings } from './server/updateStoreSettings';
 import { createPublicOrder, updateOrderStatus } from './server/orderActions';
 import { saveProduct } from './server/saveProduct';
+import { runCategoryAction } from './server/categoryActions';
+import { adminStoresAction } from './server/adminStores';
 
 const readJsonBody = async (req: any) =>
   new Promise<Record<string, unknown>>((resolve, reject) => {
@@ -146,6 +149,38 @@ export default defineConfig(({ mode }) => {
               }
             });
 
+            server.middlewares.use('/api/category-action', async (req, res, next) => {
+              if (req.method !== 'POST') return next();
+              try {
+                const result = await runCategoryAction(
+                  await readJsonBody(req),
+                  req.headers.authorization,
+                  env,
+                );
+                res.statusCode = result.status;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify(result));
+              } catch (error: any) {
+                res.statusCode = 500;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ ok: false, error: error?.message || 'No se pudo guardar la categoria.' }));
+              }
+            });
+
+            server.middlewares.use('/api/admin-stores', async (req, res, next) => {
+              if (req.method !== 'POST') return next();
+              try {
+                const result = await adminStoresAction(await readJsonBody(req), req.headers.authorization, env);
+                res.statusCode = result.status;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify(result));
+              } catch (error: any) {
+                res.statusCode = 500;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ ok: false, error: error?.message || 'No se pudieron cargar las tiendas.' }));
+              }
+            });
+
             server.middlewares.use('/api/public-order', async (req, res, next) => {
               if (req.method !== 'POST') return next();
               const result = await createPublicOrder(await readJsonBody(req), env);
@@ -198,6 +233,47 @@ export default defineConfig(({ mode }) => {
                 res.statusCode = 500;
                 res.setHeader('Content-Type', 'application/json');
                 res.end(JSON.stringify({ error: error?.message || 'Error subiendo a R2' }));
+              }
+            });
+
+            server.middlewares.use('/api/r2-upload-url', async (req, res, next) => {
+              if (req.method !== 'POST') return next();
+              try {
+                const body = await readJsonBody(req);
+                const filePath = String(body.path || '').replace(/^\/+/, '');
+                const contentType = String(body.contentType || 'application/octet-stream');
+                const size = Number(body.size || 0);
+
+                if (!filePath || filePath.includes('..') || !filePath.startsWith('stores/')) {
+                  res.statusCode = 400;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: 'Path invalido' }));
+                  return;
+                }
+                if (!Number.isFinite(size) || size <= 0 || size > 25 * 1024 * 1024) {
+                  res.statusCode = 400;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: 'Tamano de archivo invalido' }));
+                  return;
+                }
+
+                const uploadUrl = await getSignedUrl(
+                  getR2Client(env),
+                  new PutObjectCommand({
+                    Bucket: requiredEnv(env, 'R2_BUCKET_NAME'),
+                    Key: filePath,
+                    ContentType: contentType,
+                  }),
+                  { expiresIn: 300 },
+                );
+                const publicBaseUrl = requiredEnv(env, 'R2_PUBLIC_BASE_URL').replace(/\/+$/, '');
+                res.statusCode = 200;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ uploadUrl, path: filePath, url: `${publicBaseUrl}/${filePath}` }));
+              } catch (error: any) {
+                res.statusCode = 500;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: error?.message || 'No se pudo preparar la subida a R2' }));
               }
             });
 

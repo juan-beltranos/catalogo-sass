@@ -8,6 +8,7 @@ type CollectionRef = {
   path: string[];
   table: string;
   storeId?: string;
+  client?: any;
 };
 
 type DocRef = {
@@ -16,6 +17,7 @@ type DocRef = {
   table: string;
   id?: string;
   storeId?: string;
+  client?: any;
 };
 
 type QueryRef = CollectionRef & { constraints: QueryConstraint[] };
@@ -72,11 +74,12 @@ const selectByForeignKey = async (
   foreignKey: string,
   ids: string[],
   orderField?: string,
+  client: any = supabase,
 ) => {
   const rows: any[] = [];
   for (const chunk of chunkArray(ids, 100)) {
     const { data, error } = await executeWithRetry(() => {
-      let request = supabase.from(table).select("*").in(foreignKey, chunk);
+      let request = client.from(table).select("*").in(foreignKey, chunk);
       if (orderField) request = request.order(orderField);
       return request;
     });
@@ -259,10 +262,16 @@ const productBaseToApp = (row: any) => {
     row.discount_type && row.discount_value !== null
       ? { type: row.discount_type, value: Number(row.discount_value) }
       : null;
+  const categoryId = row.category_id ?? "";
+  const categoryIds = Array.from(new Set([
+    ...(categoryId ? [categoryId] : []),
+    ...(Array.isArray(row.category_ids) ? row.category_ids : []),
+  ]));
   return {
     ...row,
     storeId: row.store_id,
-    categoryId: row.category_id ?? "",
+    categoryId,
+    categoryIds,
     price: Number(row.base_price ?? 0),
     wholesalePrice: row.wholesale_price === null ? null : Number(row.wholesale_price),
     discount,
@@ -278,15 +287,15 @@ const productBaseToApp = (row: any) => {
   };
 };
 
-const hydrateProducts = async (rows: any[]) => {
+const hydrateProducts = async (rows: any[], client: any = supabase) => {
   if (!rows.length) return [];
   const ids = rows.map((row) => row.id);
 
   const [imageRows, videoRows, optionRows, variantRows] = await Promise.all([
-    selectByForeignKey("product_images", "product_id", ids, "sort_order"),
-    selectByForeignKey("product_videos", "product_id", ids, "sort_order"),
-    selectByForeignKey("product_options", "product_id", ids, "sort_order"),
-    selectByForeignKey("product_variants", "product_id", ids, "created_at"),
+    selectByForeignKey("product_images", "product_id", ids, "sort_order", client),
+    selectByForeignKey("product_videos", "product_id", ids, "sort_order", client),
+    selectByForeignKey("product_options", "product_id", ids, "sort_order", client),
+    selectByForeignKey("product_variants", "product_id", ids, "created_at", client),
   ]);
 
   const byProduct = <T extends { product_id: string }>(items: T[] = []) => {
@@ -332,6 +341,12 @@ const appProductToDb = (data: any, storeId?: string) => {
   const payload: any = {};
   if (storeId) payload.store_id = storeId;
   if ("categoryId" in data) payload.category_id = data.categoryId || null;
+  if ("categoryIds" in data || "categoryId" in data) {
+    payload.category_ids = Array.from(new Set([
+      ...(Array.isArray(data.categoryIds) ? data.categoryIds.filter(Boolean) : []),
+      ...(data.categoryId ? [data.categoryId] : []),
+    ]));
+  }
   if ("name" in data) payload.name = data.name;
   if ("sku" in data) payload.sku = data.sku || null;
   if ("description" in data) payload.description = data.description || null;
@@ -686,7 +701,7 @@ const mapRowToApp = async (table: string, row: any) => {
 };
 
 const mapRowsToApp = async (ref: CollectionRef | QueryRef, rows: any[]) => {
-  if (ref.table === "products") return hydrateProducts(rows);
+  if (ref.table === "products") return hydrateProducts(rows, ref.client);
   if (ref.table === "orders") return hydrateOrders(rows);
   return Promise.all(rows.map((row) => mapRowToApp(ref.table, row)));
 };
@@ -711,6 +726,7 @@ const mapField = (table: string, field: string) => {
     categories: { order: "sort_order" },
     products: {
       categoryId: "category_id",
+      categoryIds: "category_ids",
       price: "base_price",
       wholesalePrice: "wholesale_price",
       isActive: "is_active",
@@ -759,6 +775,8 @@ const matchesWhere = (row: any, c: QueryConstraint) => {
       return actual <= value;
     case "in":
       return Array.isArray(value) && value.includes(actual);
+    case "array-contains":
+      return Array.isArray(actual) && actual.includes(value);
     default:
       return actual === value;
   }
@@ -853,12 +871,13 @@ const normalizeArgs = (args: any[]) =>
     return [String(arg)];
   });
 
-export const collection = (_db: unknown, ...segments: any[]): CollectionRef => {
+export const collection = (_db: any, ...segments: any[]): CollectionRef => {
   const path = normalizeArgs(segments);
-  return { kind: "collection", path, table: tableForPath(path), storeId: storeIdForPath(path) };
+  return { kind: "collection", path, table: tableForPath(path), storeId: storeIdForPath(path), client: _db?.from ? _db : undefined };
 };
 
 export const doc = (...args: any[]): DocRef => {
+  const client = args[0]?.client ?? (args[0]?.from ? args[0] : undefined);
   const start = args[0]?.kind === "collection" ? 0 : 1;
   const path = normalizeArgs(args.slice(start));
   if (args.length === 1 && args[0]?.kind === "collection" && path.length % 2 === 1) {
@@ -866,7 +885,7 @@ export const doc = (...args: any[]): DocRef => {
   }
   const id = path.length % 2 === 0 ? path[path.length - 1] : undefined;
   const collectionPath = id ? path.slice(0, -1) : path;
-  return { kind: "doc", path, id, table: tableForPath(collectionPath), storeId: storeIdForPath(collectionPath) };
+  return { kind: "doc", path, id, table: tableForPath(collectionPath), storeId: storeIdForPath(collectionPath), client };
 };
 
 export const query = (base: CollectionRef | QueryRef, ...constraints: QueryConstraint[]): QueryRef => ({
@@ -920,6 +939,9 @@ const applyServerConstraints = (builder: any, table: string, constraints: QueryC
       case "in":
         if (Array.isArray(value) && value.length) next = next.in(field, value);
         break;
+      case "array-contains":
+        next = next.contains(field, [value]);
+        break;
     }
   }
 
@@ -943,13 +965,14 @@ const applyServerConstraints = (builder: any, table: string, constraints: QueryC
 };
 
 export const getDocs = async (ref: CollectionRef | QueryRef) => {
+  const client = ref.client ?? supabase;
   const constraints = (ref as QueryRef).constraints ?? [];
   const hasExplicitLimit = constraints.some((item) => item.type === "limit");
   let rawRows: any[] = [];
 
   if (hasExplicitLimit) {
     const { data, error } = await executeWithRetry(() => applyServerConstraints(
-      applyBaseFilters(supabase.from(ref.table).select("*"), ref),
+      applyBaseFilters(client.from(ref.table).select("*"), ref),
       ref.table,
       constraints,
     ));
@@ -961,7 +984,7 @@ export const getDocs = async (ref: CollectionRef | QueryRef) => {
     const pageSize = 1000;
     for (let from = 0; ; from += pageSize) {
       const { data, error } = await executeWithRetry(() => applyServerConstraints(
-        applyBaseFilters(supabase.from(ref.table).select("*"), ref),
+        applyBaseFilters(client.from(ref.table).select("*"), ref),
         ref.table,
         constraints,
       ).range(from, from + pageSize - 1));
@@ -997,7 +1020,8 @@ export const getDoc = async (ref: DocRef) => {
     if (error) throw error;
     return new SupabaseDocumentSnapshot(ref, ref.id, data ? dbClientToApp(data) : null);
   }
-  const { data, error } = await applyBaseFilters(supabase.from(ref.table).select("*"), ref)
+  const client = ref.client ?? supabase;
+  const { data, error } = await applyBaseFilters(client.from(ref.table).select("*"), ref)
     .eq("id", ref.id)
     .maybeSingle();
   if (error) throw error;

@@ -54,6 +54,38 @@ import { CSS } from "@dnd-kit/utilities";
 
 const PAGE_SIZE = 10;
 
+type CategoryChoice = { id: string; name: string; order?: number };
+
+const CategoryMultiSelect: React.FC<{
+  categories: CategoryChoice[];
+  value: string[];
+  onChange: (ids: string[]) => void;
+}> = ({ categories, value, onChange }) => {
+  const selected = new Set(value);
+  return (
+    <fieldset className="rounded-lg border border-gray-200 p-3">
+      <legend className="px-1 text-sm font-medium text-gray-700">Categorías</legend>
+      <p className="mb-2 text-xs text-gray-400">Selecciona una o varias. La primera será la categoría principal.</p>
+      <div className="max-h-44 space-y-1 overflow-y-auto pr-1">
+        {categories.map((category) => (
+          <label key={category.id} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 hover:bg-gray-50">
+            <input
+              type="checkbox"
+              checked={selected.has(category.id)}
+              onChange={(event) => onChange(event.target.checked
+                ? [...value, category.id]
+                : value.filter((id) => id !== category.id))}
+            />
+            <span className="min-w-0 flex-1 truncate text-sm text-gray-700">{category.name}</span>
+            {value[0] === category.id ? <span className="text-[10px] font-semibold text-indigo-600">PRINCIPAL</span> : null}
+          </label>
+        ))}
+      </div>
+      {!categories.length ? <p className="text-xs text-amber-600">Crea una categoría antes de guardar el producto.</p> : null}
+    </fieldset>
+  );
+};
+
 const FREE_MAX_PRODUCTS = 300;
 const FREE_MAX_IMAGES = 1;
 const FREE_MAX_VIDEOS = 0;
@@ -243,6 +275,7 @@ const ProductsView: React.FC = () => {
   const [priceInput, setPriceInput] = useState("");
   const [wholesalePriceInput, setWholesalePriceInput] = useState("");
   const [categoryId, setCategoryId] = useState("");
+  const [categoryIds, setCategoryIds] = useState<string[]>([]);
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [sku, setSku] = useState("");
@@ -334,7 +367,8 @@ const ProductsView: React.FC = () => {
         description: data.description ?? "",
         price: Number(data.price ?? 0),
         wholesalePrice: data.wholesalePrice ?? null,
-        categoryId: data.categoryId ?? "",
+        categoryId: data.categoryId ?? data.categoryIds?.[0] ?? "",
+        categoryIds: Array.from(new Set([...(data.categoryId ? [data.categoryId] : []), ...(data.categoryIds ?? [])])),
         images: (data.images ?? []) as ImageItem[],
         videos: (data.videos ?? []) as VideoItem[],
         options: (data.options ?? []) as ProductOption[],
@@ -1100,7 +1134,7 @@ const ProductsView: React.FC = () => {
 
   const resetCreateForm = () => {
     if (fileInputRef.current) fileInputRef.current.value = "";
-    setName(""); setDescription(""); setPriceInput(""); setWholesalePriceInput(""); setCategoryId(""); setSku("");
+    setName(""); setDescription(""); setPriceInput(""); setWholesalePriceInput(""); setCategoryId(""); setCategoryIds([]); setSku("");
     setHasDiscount(false); setDiscountType("percent"); setDiscountValueInput("");
     setImageFiles([]); setVideoFiles([]); setUseVariants(false); setCreateVariants([]); setIsActive(true); setAllowsCashOnDelivery(true);
   };
@@ -1234,7 +1268,7 @@ const ProductsView: React.FC = () => {
     if (isSubmitting) return;
     const cleanName = name.trim();
     const bp = parseCOP(priceInput);
-    if (!cleanName || !categoryId || !bp) return;
+    if (!cleanName || !categoryIds.length || !bp) return;
 
     if (!hasActiveSubscription) {
       const countSnap = await getCountFromServer(prodsRef);
@@ -1267,7 +1301,7 @@ const ProductsView: React.FC = () => {
 
       await addDoc(prodsRef, {
         name: cleanName, sku: cleanSku, description: description.trim(), price: bp, wholesalePrice, discount,
-        categoryId, images, videos, options: [], variants, isActive, allowsCashOnDelivery,
+        categoryId: categoryIds[0], categoryIds, images, videos, options: [], variants, isActive, allowsCashOnDelivery,
         order: newOrder,
         createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
       });
@@ -1355,7 +1389,8 @@ const ProductsView: React.FC = () => {
       images: [...(p.images ?? [])],
       videos: [...(p.videos ?? [])],
     };
-    setEditingProduct(p);
+    const normalizedCategoryIds = Array.from(new Set([...(p.categoryId ? [p.categoryId] : []), ...(p.categoryIds ?? [])]));
+    setEditingProduct({ ...p, categoryId: normalizedCategoryIds[0] ?? "", categoryIds: normalizedCategoryIds });
     setEditPriceInput(String(p.price));
     setEditWholesalePriceInput(p.wholesalePrice ? String(p.wholesalePrice) : "");
     setEditUseVariants((p.variants?.length ?? 0) > 0);
@@ -1386,7 +1421,10 @@ const ProductsView: React.FC = () => {
       const productChanges = {
         name: editingProduct.name.trim(), sku: cleanSku,
         description: (editingProduct.description ?? "").trim(),
-        price: bp, wholesalePrice, discount, categoryId: editingProduct.categoryId, options: [],
+        price: bp, wholesalePrice, discount,
+        categoryId: editingProduct.categoryIds?.[0] ?? editingProduct.categoryId,
+        categoryIds: editingProduct.categoryIds ?? (editingProduct.categoryId ? [editingProduct.categoryId] : []),
+        options: [],
         variants: editUseVariants ? (editingProduct.variants ?? []) : [],
         images: editingProduct.images ?? [], videos: editingProduct.videos ?? [],
         isActive: editingProduct.isActive ?? true,
@@ -1695,10 +1733,14 @@ const ProductsView: React.FC = () => {
               </div>
             </div>
 
-            <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="w-full p-2 border rounded" required>
-              <option value="">Categoría</option>
-              {categories.map((cat) => (<option key={cat.id} value={cat.id}>{cat.name}</option>))}
-            </select>
+            <CategoryMultiSelect
+              categories={categories}
+              value={categoryIds}
+              onChange={(ids) => {
+                setCategoryIds(ids);
+                setCategoryId(ids[0] ?? "");
+              }}
+            />
 
             <div>
               <p className="text-[11px] text-gray-400">+ Agregar imágenes <span className="font-medium text-gray-500">(máx. {maxImages} por producto)</span></p>
@@ -2061,11 +2103,15 @@ const ProductsView: React.FC = () => {
                       <input id="editAllowsCashOnDelivery" type="checkbox" checked={editingProduct.allowsCashOnDelivery ?? true} onChange={(e) => setEditingProduct({ ...editingProduct, allowsCashOnDelivery: e.target.checked })} />
                     </div>
                   </div>
-                  <label className="text-xs text-gray-500">Categoría</label>
-                  <select value={editingProduct.categoryId} onChange={(e) => setEditingProduct({ ...editingProduct, categoryId: e.target.value })} className="w-full p-2 border rounded">
-                    <option value="">Categoría</option>
-                    {categories.map((cat) => (<option key={cat.id} value={cat.id}>{cat.name}</option>))}
-                  </select>
+                  <CategoryMultiSelect
+                    categories={categories}
+                    value={editingProduct.categoryIds ?? (editingProduct.categoryId ? [editingProduct.categoryId] : [])}
+                    onChange={(ids) => setEditingProduct({
+                      ...editingProduct,
+                      categoryId: ids[0] ?? "",
+                      categoryIds: ids,
+                    })}
+                  />
                 </div>
               </div>
 

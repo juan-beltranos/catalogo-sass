@@ -22,7 +22,7 @@ import {
   runTransaction,
   increment,
 } from "@/lib/supabaseFirestore";
-import { db, supabase } from "@/lib/supabase";
+import { db, publicSupabase } from "@/lib/supabase";
 import { Product, Store } from "@/interfaces";
 import { CartItem, Category, Variant } from "@/types";
 import {
@@ -71,6 +71,15 @@ const clearStoreCache = (storeId: string) => {
   catalogCache.delete(storeId);
 };
 const searchProductsCache = new Map<string, Product[]>();
+
+const readableQueryError = (error: any, fallback: string) => {
+  const parts = [error?.message, error?.details, error?.hint]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+  const detail = Array.from(new Set(parts)).join(" · ");
+  const code = String(error?.code || "").trim();
+  return detail ? `${fallback} ${code ? `[${code}] ` : ""}${detail}` : fallback;
+};
 
 // ── Helpers de envío ──────────────────────────────────────────────────────────
 
@@ -490,10 +499,12 @@ const CatalogView: React.FC = () => {
     if (!q) {
       return activeCategoryId === "all"
         ? visible
-        : visible.filter((p) => p.categoryId === activeCategoryId);
+        : visible.filter((p) => (p.categoryIds ?? [p.categoryId]).includes(activeCategoryId));
     }
     return visible.filter((p) => {
-      const catName = categoryNameById.get(p.categoryId) || "";
+      const catName = (p.categoryIds ?? [p.categoryId])
+        .map((id) => categoryNameById.get(id) || "")
+        .join(" ");
       const variantsText = (p.variants || [])
         .map((v: any) => `${v.title ?? ""} ${v.sku ?? ""}`)
         .join(" ");
@@ -543,7 +554,7 @@ const CatalogView: React.FC = () => {
       setQueryError(null);
 
       try {
-        const { data, error } = await supabase.rpc("get_public_catalog_store", {
+        const { data, error } = await publicSupabase.rpc("get_public_catalog_store", {
           p_slug: slug,
         });
         if (error) throw error;
@@ -578,7 +589,7 @@ const CatalogView: React.FC = () => {
 
   useEffect(() => {
     if (!store || catalogUnavailableReason) return;
-    const qCats = query(collection(db, "stores", store.id, "categories"));
+    const qCats = query(collection(publicSupabase, "stores", store.id, "categories"));
     const unsubscribeCats = onSnapshot(qCats, (snap) => {
       setCategories(sortCategories(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }))));
     });
@@ -612,7 +623,7 @@ const CatalogView: React.FC = () => {
     setSearchLoaded(false);
     setQueryError(null);
     try {
-      const baseRef = collection(db, "stores", storeId, "products");
+      const baseRef = collection(publicSupabase, "stores", storeId, "products");
       const snap = await getDocs(baseRef);
       const allProducts = sortProducts(snap.docs.map((d) => ({
         id: d.id,
@@ -658,12 +669,12 @@ const CatalogView: React.FC = () => {
       }
       setProductsLoading(true);
       setQueryError(null);
-      const baseRef = collection(db, "stores", storeId, "products");
+      const baseRef = collection(publicSupabase, "stores", storeId, "products");
       try {
         const constraints: QueryConstraint[] = [];
         constraints.push(where("isActive", "==", true));
         if (categoryId !== "all")
-          constraints.push(where("categoryId", "==", categoryId));
+          constraints.push(where("categoryIds", "array-contains", categoryId));
         constraints.push(
           orderBy("createdAt", "desc"),
           limit(PAGE_SIZE + 1),
@@ -685,12 +696,14 @@ const CatalogView: React.FC = () => {
         setHasMore(more);
       } catch (e: any) {
         if (requestId !== productsRequestIdRef.current) return;
-        console.error("fetchFirstPage error:", e);
-        const msg = String(e?.message || "")
-          .toLowerCase()
-          .includes("index")
-          ? "Falta un índice en Firestore para filtrar por categoría. Revisa la consola."
-          : "Error consultando productos. Revisa la consola.";
+        console.error("fetchFirstPage error:", {
+          code: e?.code,
+          message: e?.message,
+          details: e?.details,
+          hint: e?.hint,
+          error: e,
+        });
+        const msg = readableQueryError(e, "Error consultando productos.");
         setQueryError(msg);
         setProducts([]);
         setHasMore(false);
@@ -711,11 +724,11 @@ const CatalogView: React.FC = () => {
         await fetchFirstPage(store.id, activeCategoryId);
         return;
       }
-      const baseRef = collection(db, "stores", store.id, "products");
+      const baseRef = collection(publicSupabase, "stores", store.id, "products");
       const constraints: QueryConstraint[] = [];
       constraints.push(where("isActive", "==", true));
       if (activeCategoryId !== "all")
-        constraints.push(where("categoryId", "==", activeCategoryId));
+        constraints.push(where("categoryIds", "array-contains", activeCategoryId));
       constraints.push(
         orderBy("createdAt", "desc"),
         offset(cached.products.length),
@@ -746,11 +759,7 @@ const CatalogView: React.FC = () => {
       setHasMore(more);
     } catch (e: any) {
       console.error("fetchMorePage error:", e);
-      const msg = String(e?.message || "")
-        .toLowerCase()
-        .includes("index")
-        ? "Falta un índice en Firestore para paginar. Revisa la consola."
-        : "Error cargando más productos. Revisa la consola.";
+      const msg = readableQueryError(e, "Error cargando más productos.");
       setQueryError(msg);
     } finally {
       setLoadingMore(false);
@@ -882,11 +891,11 @@ const CatalogView: React.FC = () => {
     setPlacingOrder(true);
     try {
       const resolveCartProduct = async (item: CartItem) => {
-        const productRef = doc(db, "stores", store.id, "products", item.productId);
+        const productRef = doc(publicSupabase, "stores", store.id, "products", item.productId);
         const snap = await getDoc(productRef);
         if (snap.exists()) return { item, ref: productRef, data: snap.data() };
 
-        const productsRef = collection(db, "stores", store.id, "products");
+        const productsRef = collection(publicSupabase, "stores", store.id, "products");
         const candidates: QueryConstraint[][] = [];
         if (item.sku) candidates.push([where("sku", "==", item.sku), limit(1)]);
         candidates.push([where("name", "==", item.productName), limit(1)]);
@@ -896,7 +905,7 @@ const CatalogView: React.FC = () => {
           const fallbackDoc = fallbackSnap.docs[0];
           if (fallbackDoc?.exists()) {
             const fallbackData = fallbackDoc.data() as Product;
-            const fallbackRef = doc(db, "stores", store.id, "products", fallbackDoc.id);
+            const fallbackRef = doc(publicSupabase, "stores", store.id, "products", fallbackDoc.id);
             return {
               item: { ...item, productId: fallbackDoc.id },
               ref: fallbackRef,

@@ -13,6 +13,10 @@ const productPayload = (product: any) => ({
   discount_type: product.discount?.type ?? null,
   discount_value: product.discount?.value ?? null,
   category_id: product.categoryId || null,
+  category_ids: Array.from(new Set([
+    ...(Array.isArray(product.categoryIds) ? product.categoryIds.filter(Boolean) : []),
+    ...(product.categoryId ? [product.categoryId] : []),
+  ])),
   is_active: product.isActive !== false,
   allow_cash_on_delivery: product.allowsCashOnDelivery !== false,
   updated_at: new Date().toISOString(),

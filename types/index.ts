@@ -33,6 +33,7 @@ export type Product = {
     price: number;
     wholesalePrice?: number | null;
     categoryId: string;
+    categoryIds?: string[];
     imageUrl?: string;
     images?: ImageItem[];
     variants?: Variant[];

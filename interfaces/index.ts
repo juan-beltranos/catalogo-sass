@@ -7,7 +7,10 @@ export interface Product {
   description?: string;
     price: number;
     wholesalePrice?: number | null;
+    /** Categoría principal (compatibilidad con productos y clientes anteriores). */
     categoryId: string;
+    /** Todas las categorías asignadas. Siempre incluye categoryId cuando existe. */
+    categoryIds?: string[];
   images: ImageItem[];
   options: ProductOption[];
   variants: Variant[];

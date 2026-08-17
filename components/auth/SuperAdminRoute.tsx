@@ -1,7 +1,8 @@
 import React from "react";
 import { useAuth } from "@/context/AuthContext";
+import { SUPER_ADMIN_EMAIL } from "@/lib/superAdmin";
 
-export const SUPER_ADMIN_EMAIL = "inteliasb@gmail.com";
+export { SUPER_ADMIN_EMAIL } from "@/lib/superAdmin";
 
 const SuperAdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
