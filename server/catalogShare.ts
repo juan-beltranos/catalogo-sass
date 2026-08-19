@@ -86,7 +86,7 @@ export async function buildCatalogShareHtml(params: {
   const supabase = getSupabase(params.env);
   const { data: store, error } = await supabase
     .from("stores")
-    .select("name, slug, logo_url, banner_url, business_type, city, status")
+    .select("name, slug, description, logo_url, banner_url, business_type, city, status")
     .eq("slug", slug)
     .maybeSingle();
 
@@ -105,11 +105,13 @@ export async function buildCatalogShareHtml(params: {
     };
   }
 
+  const storeName = String(store.name || slug).trim();
   const business = [store.business_type, store.city].filter(Boolean).join(" en ");
-  const title = `Catalogo oficial de ${store.name}`;
-  const description = business
-    ? `Compra con confianza en el catalogo seguro de ${store.name}, ${business}.`
-    : `Compra con confianza en el catalogo seguro de ${store.name}.`;
+  const title = storeName;
+  const savedDescription = String(store.description || "").trim();
+  const description = savedDescription || (business
+    ? `${business}. Conoce los productos de ${storeName} y haz tu pedido en linea.`
+    : `Conoce los productos de ${storeName} y haz tu pedido en linea.`);
   const imageUrl = absoluteUrl(store.logo_url || store.banner_url, params.origin);
 
   return {
@@ -118,6 +120,7 @@ export async function buildCatalogShareHtml(params: {
       title,
       description,
       imageUrl,
+      imageAlt: `Logo de ${storeName}`,
       shareUrl,
       redirectUrl: appPath,
     }),
@@ -128,18 +131,21 @@ function renderShareHtml(params: {
   title: string;
   description: string;
   imageUrl: string;
+  imageAlt?: string;
   shareUrl: string;
   redirectUrl: string;
 }) {
   const title = escapeHtml(params.title);
   const description = escapeHtml(params.description);
   const imageUrl = escapeHtml(params.imageUrl);
+  const imageAlt = escapeHtml(params.imageAlt || params.title);
   const shareUrl = escapeHtml(params.shareUrl);
   const redirectUrl = escapeHtml(params.redirectUrl);
   const imageMeta = imageUrl
     ? `
     <meta property="og:image" content="${imageUrl}">
     <meta property="og:image:secure_url" content="${imageUrl}">
+    <meta property="og:image:alt" content="${imageAlt}">
     <meta name="twitter:image" content="${imageUrl}">`
     : "";
 
@@ -151,6 +157,7 @@ function renderShareHtml(params: {
   <title>${title}</title>
   <meta name="description" content="${description}">
   <meta property="og:type" content="website">
+  <meta property="og:locale" content="es_CO">
   <meta property="og:site_name" content="CatalogoSaaS">
   <meta property="og:title" content="${title}">
   <meta property="og:description" content="${description}">

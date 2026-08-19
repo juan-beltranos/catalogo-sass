@@ -43,6 +43,7 @@ import {
   getProductCardPrice,
 } from "@/helpers/pricing";
 import { evaluateCommerceRules } from "@/helpers/commerceRules";
+import { getCatalogShareUrl } from "@/helpers/catalogLinks";
 import { normalizeCheckoutFormFields } from "@/helpers/checkoutFields";
 
 const PAGE_SIZE = 20;
@@ -1131,7 +1132,8 @@ const CatalogView: React.FC = () => {
   };
 
   const handleShare = async () => {
-    const url = window.location.href;
+    if (!slug) return;
+    const url = getCatalogShareUrl(slug, Object.fromEntries(searchParams.entries()));
     if (navigator.share) {
       try {
         await navigator.share({ title: store?.name, url });
