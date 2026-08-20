@@ -1651,12 +1651,12 @@ const ProductsView: React.FC = () => {
               : `${productCount} de ${planAccess.productLimit} creados · ${Math.max(0, planAccess.productLimit - productCount)} disponibles`}
           </p>
         </div>
-        {!hasActiveSubscription && (
+        {/* {!hasActiveSubscription && (
           <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-xs px-3 py-1.5 rounded-lg">
             <i className="fa-solid fa-lock text-amber-500" />
             <span>Plan pago único · máx. {FREE_MAX_PRODUCTS} · {FREE_MAX_IMAGES} img/prod · sin videos</span>
           </div>
-        )}
+        )} */}
       </div>
 
       <div className="flex items-center gap-2">

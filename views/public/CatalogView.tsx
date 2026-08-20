@@ -332,6 +332,39 @@ const CatalogUnavailableScreen: React.FC<{
   );
 };
 
+const CatalogIntro: React.FC<{
+  store: Store | null;
+  exiting?: boolean;
+}> = ({ store, exiting = false }) => {
+  const brandColor = (store as any)?.brandColor || "#111827";
+  const storeName = store?.name || "Catálogo";
+
+  return (
+    <div
+      className={`catalog-intro ${exiting ? "catalog-intro--exiting" : ""}`}
+      style={{ backgroundColor: brandColor }}
+      role="status"
+      aria-live="polite"
+      aria-label={`Cargando catálogo de ${storeName}`}
+    >
+      <div className="catalog-intro__glow" aria-hidden="true" />
+      <div className="catalog-intro__brand">
+        <div className="catalog-intro__logo-frame">
+          {store?.logoUrl ? (
+            <img src={store.logoUrl} alt={`Logo de ${storeName}`} className="catalog-intro__logo" />
+          ) : (
+            <span className="catalog-intro__monogram" aria-hidden="true">
+              {store ? storeName.trim().slice(0, 1).toUpperCase() : ""}
+            </span>
+          )}
+        </div>
+        {store ? <p className="catalog-intro__name">{storeName}</p> : null}
+        <span className="catalog-intro__loader" aria-hidden="true" />
+      </div>
+    </div>
+  );
+};
+
 const CatalogView: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -345,6 +378,9 @@ const CatalogView: React.FC = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [productsLoading, setProductsLoading] = useState(false);
+  const [showIntro, setShowIntro] = useState(true);
+  const [introExiting, setIntroExiting] = useState(false);
+  const introStartedAtRef = useRef(Date.now());
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -379,6 +415,27 @@ const CatalogView: React.FC = () => {
   const [locationTooltipOpen, setLocationTooltipOpen] = useState(false);
 
   const isSearching = search.trim().length > 0;
+
+  useEffect(() => {
+    introStartedAtRef.current = Date.now();
+    setIntroExiting(false);
+    setShowIntro(true);
+  }, [slug]);
+
+  useEffect(() => {
+    if (!showIntro || loading || !store || catalogUnavailableReason || productsLoading) return;
+
+    const remaining = Math.max(0, 1400 - (Date.now() - introStartedAtRef.current));
+    const exitTimer = window.setTimeout(() => {
+      setIntroExiting(true);
+    }, remaining);
+    const removeTimer = window.setTimeout(() => setShowIntro(false), remaining + 500);
+
+    return () => {
+      window.clearTimeout(exitTimer);
+      window.clearTimeout(removeTimer);
+    };
+  }, [showIntro, loading, store, catalogUnavailableReason, productsLoading, slug]);
 
   const [productModal, setProductModal] = useState<{
     open: boolean;
@@ -576,6 +633,9 @@ const CatalogView: React.FC = () => {
         const s = data as Store;
         const unavailableReason = getCatalogUnavailableReason(s);
 
+        // La animación empieza cuando la identidad real ya está disponible,
+        // evitando mostrar primero el color o el logo de respaldo.
+        introStartedAtRef.current = Date.now();
         setStore(s);
         setCatalogUnavailableReason(unavailableReason);
         document.title = unavailableReason
@@ -1155,11 +1215,7 @@ const CatalogView: React.FC = () => {
   const description = (store as any)?.description || store?.address || "";
 
   if (loading)
-    return (
-      <div className="h-screen flex items-center justify-center text-gray-500">
-        Cargando catálogo...
-      </div>
-    );
+    return <div className="h-screen bg-white" aria-label="Preparando catálogo" />;
   if (!store)
     return <CatalogUnavailableScreen reason="not_found" />;
 
@@ -1173,6 +1229,7 @@ const CatalogView: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-28">
+      {showIntro ? <CatalogIntro store={store} exiting={introExiting} /> : null}
       {/* ── Toast compartir ── */}
       {shareToast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] bg-gray-900 text-white text-sm font-semibold px-5 py-2.5 rounded-full shadow-lg">
