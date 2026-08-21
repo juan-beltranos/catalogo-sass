@@ -17,7 +17,7 @@ import {
   getCountFromServer,
   writeBatch,
 } from "@/lib/supabaseFirestore";
-import { db } from "@/lib/supabase";
+import { db, supabase } from "@/lib/supabase";
 import { getStoreForOwner } from "@/lib/storeLookup";
 import { useAuth } from "../../context/AuthContext";
 import { Product } from "@/interfaces";
@@ -46,13 +46,13 @@ import {
 import {
   SortableContext,
   arrayMove,
+  rectSortingStrategy,
   sortableKeyboardCoordinates,
   useSortable,
-  verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 12;
 
 type CategoryChoice = { id: string; name: string; order?: number };
 
@@ -151,19 +151,20 @@ let pageCache: PageCache | null = null;
 
 const allProductsCache = new Map<string, Product[]>();
 
-type SortableProductRowProps = {
+type SortableProductCardProps = {
   prod: Product;
-  index: number;
   displayPrice: string;
-  hasVariants: boolean;
+  categoryNames: string;
+  canDrag: boolean;
   openEdit: (p: Product) => void;
   handleDeleteProduct: (p: Product) => void;
 };
 
-const SortableProductRow: React.FC<SortableProductRowProps> = ({
+const SortableProductCard: React.FC<SortableProductCardProps> = ({
   prod,
   displayPrice,
-  hasVariants,
+  categoryNames,
+  canDrag,
   openEdit,
   handleDeleteProduct,
 }) => {
@@ -174,7 +175,7 @@ const SortableProductRow: React.FC<SortableProductRowProps> = ({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: prod.id });
+  } = useSortable({ id: prod.id, disabled: !canDrag });
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -182,89 +183,47 @@ const SortableProductRow: React.FC<SortableProductRowProps> = ({
   };
 
   return (
-    <tr
+    <article
       ref={setNodeRef}
       style={style}
-      className={`text-sm transition-colors ${isDragging ? "bg-indigo-50 opacity-80 relative z-10" : ""
-        }`}
+      className={`group relative min-h-[172px] rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md ${isDragging ? "relative z-10 scale-[1.02] border-indigo-300 opacity-90 shadow-xl" : ""}`}
     >
-      <td className="px-3 py-4">
-        <button
-          type="button"
-          {...attributes}
-          {...listeners}
-          style={{ touchAction: "none" }}
-          className="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 flex items-center justify-center w-10 h-10"
-          title="Arrastrar para reordenar"
-        >
-          <i className="fa-solid fa-grip-vertical text-base" />
+      <div className="flex items-start justify-between gap-2">
+        <button type="button" {...attributes} {...listeners} style={{ touchAction: "none" }}
+          disabled={!canDrag}
+          className="flex h-9 w-9 shrink-0 cursor-grab items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 hover:border-indigo-300 hover:text-indigo-600 active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-40"
+          title="Arrastrar para reordenar">
+          <i className="fa-solid fa-grip-vertical" />
         </button>
-      </td>
+        <div className="flex gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
+          <button onClick={() => openEdit(prod)} className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100" title="Editar" type="button"><i className="fa-solid fa-pen" /></button>
+          <button onClick={() => handleDeleteProduct(prod)} className="flex h-9 w-9 items-center justify-center rounded-full bg-red-50 text-red-500 hover:bg-red-100" title="Eliminar" type="button"><i className="fa-solid fa-trash-can" /></button>
+        </div>
+      </div>
 
-      <td className="px-4 sm:px-6 py-4 font-medium">
-        <div className="flex items-center gap-3">
+      <div className="mt-2 flex min-w-0 gap-4">
           {prod.images?.[0]?.url ? (
             <img
-              src={cldImg(prod.images[0].url, {
-                w: 80,
-                h: 80,
-                crop: "fill",
-              })}
+              src={cldImg(prod.images[0].url, { w: 180, h: 180, crop: "fill" })}
               alt={prod.name}
-              className="w-10 h-10 rounded object-cover border shrink-0"
+              className="h-20 w-20 shrink-0 rounded-xl border border-slate-100 bg-slate-50 object-contain"
               loading="lazy"
             />
           ) : (
-            <div className="w-10 h-10 rounded bg-gray-100 border shrink-0" />
+            <div className="grid h-20 w-20 shrink-0 place-items-center rounded-xl border border-slate-100 bg-slate-50 text-slate-300"><i className="fa-solid fa-image text-xl" /></div>
           )}
-
-          <div className="min-w-0 flex-1">
-            <div className="font-semibold text-gray-900 truncate">
-              {prod.name}
-            </div>
-
-            <div className="text-xs text-gray-400 line-clamp-2 sm:line-clamp-1">
-              {prod.description || ""}
-            </div>
-
-            {(prod.videos?.length ?? 0) > 0 ? (
-              <div className="mt-1 text-[10px] text-gray-400">
-                <i className="fa-solid fa-video mr-1" />
-                {prod.videos!.length} video(s)
-              </div>
-            ) : null}
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate text-base font-extrabold uppercase text-slate-900" title={prod.name}>{prod.name}</h3>
+          <p className="mt-0.5 truncate text-[11px] text-slate-500">SKU: {prod.sku || "Sin SKU"}</p>
+          <div className="mt-2 inline-flex max-w-full items-center gap-1 rounded-lg bg-slate-50 px-2 py-1 text-[10px] font-medium uppercase text-slate-600">
+            <i className="fa-solid fa-tag text-slate-400" /><span className="truncate">{categoryNames || "Sin categoría"}</span>
           </div>
+          <p className="mt-2 text-lg font-extrabold text-blue-600">{displayPrice}</p>
+          <p className="mt-0.5 truncate text-xs text-slate-500">{prod.description || "Sin descripción"}</p>
         </div>
-      </td>
-
-      <td className="px-4 sm:px-6 py-4 font-bold text-indigo-600 whitespace-nowrap">
-        {displayPrice}
-      </td>
-
-      <td className="px-4 sm:px-6 py-4 text-gray-600 whitespace-nowrap">
-        {hasVariants ? prod.variants?.length : "-"}
-      </td>
-
-      <td className="px-4 sm:px-6 py-4 text-right whitespace-nowrap">
-        <button
-          onClick={() => openEdit(prod)}
-          className="inline-flex items-center justify-center w-10 h-10 rounded-lg border border-gray-200 text-gray-500 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50"
-          title="Editar"
-          type="button"
-        >
-          <i className="fa-solid fa-pen" />
-        </button>
-
-        <button
-          onClick={() => handleDeleteProduct(prod)}
-          className="ml-2 inline-flex items-center justify-center w-10 h-10 rounded-lg border border-gray-200 text-gray-500 hover:text-red-600 hover:border-red-200 hover:bg-red-50"
-          title="Eliminar"
-          type="button"
-        >
-          <i className="fa-solid fa-trash-can" />
-        </button>
-      </td>
-    </tr>
+      </div>
+      {prod.isActive === false ? <span className="absolute bottom-3 right-3 rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-500">OCULTO</span> : null}
+    </article>
   );
 };
 
@@ -329,6 +288,9 @@ const ProductsView: React.FC = () => {
   const [uploadProgress, setUploadProgress] = useState({ total: 0, done: 0, currentName: "" });
 
   const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [categoryOrderIds, setCategoryOrderIds] = useState<string[]>([]);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<Product[]>([]);
@@ -1074,13 +1036,16 @@ const ProductsView: React.FC = () => {
       const term = normalize(termRaw);
       if (!term) { setSearchResults([]); return; }
       const parts = term.split(/\s+/).filter(Boolean);
+      const categoryMap = new Map(categories.map((category) => [category.id, category.name]));
       const filtered = allProducts.filter((p) => {
-        const hay = normalize(`${p.name ?? ""} ${p.sku ?? ""} ${p.description ?? ""}`);
+        const productCategories = (p.categoryIds?.length ? p.categoryIds : [p.categoryId]).filter(Boolean);
+        const categoryText = productCategories.map((id) => categoryMap.get(id || "") || "").join(" ");
+        const hay = normalize(`${p.name ?? ""} ${p.sku ?? ""} ${p.description ?? ""} ${categoryText} ${p.price ?? ""}`);
         return parts.every((w) => hay.includes(w));
       });
       setSearchResults(filtered);
     },
-    [allProducts]
+    [allProducts, categories]
   );
 
   useEffect(() => {
@@ -1092,6 +1057,34 @@ const ProductsView: React.FC = () => {
     };
     run();
   }, [debouncedSearch, storeId, prodsRef, allLoaded, loadAllProductsOnce, filterLocal]);
+
+  useEffect(() => {
+    if (categoryFilter && !allLoaded) loadAllProductsOnce();
+  }, [categoryFilter, allLoaded, loadAllProductsOnce]);
+
+  useEffect(() => {
+    let active = true;
+    if (!storeId || !categoryFilter) {
+      setCategoryOrderIds([]);
+      return;
+    }
+    supabase.from("product_category_orders")
+      .select("product_id,sort_order")
+      .eq("store_id", storeId)
+      .eq("category_id", categoryFilter)
+      .order("sort_order", { ascending: true })
+      .then(({ data, error }) => {
+        if (error) {
+          // Compatibilidad durante el despliegue: si la migracion aun no esta
+          // aplicada, la categoria conserva el orden global existente.
+          console.warn("Orden por categoria no disponible:", error.message);
+          if (active) setCategoryOrderIds([]);
+          return;
+        }
+        if (active) setCategoryOrderIds((data ?? []).map((row: any) => row.product_id));
+      });
+    return () => { active = false; };
+  }, [storeId, categoryFilter]);
 
   const uploadImages = async (files: File[]): Promise<ImageItem[]> => {
     if (!storeId || !files.length) return [];
@@ -1235,46 +1228,47 @@ const ProductsView: React.FC = () => {
 
     if (!over || active.id === over.id || !storeId) return;
 
-    const oldIndex = products.findIndex((p) => p.id === active.id);
-    const newIndex = products.findIndex((p) => p.id === over.id);
+    const visibleItems = categoryFilter ? listToRender : products;
+    const oldIndex = visibleItems.findIndex((p) => p.id === active.id);
+    const newIndex = visibleItems.findIndex((p) => p.id === over.id);
 
     if (oldIndex === -1 || newIndex === -1) return;
 
-    const reordered = arrayMove(products, oldIndex, newIndex);
+    const reordered = arrayMove(visibleItems, oldIndex, newIndex);
+    let updated: Product[];
 
-    const pageOffset = (page - 1) * PAGE_SIZE;
-    const updated = reordered.map((p, i) => ({
-      ...p,
-      order: pageOffset + i,
-    }));
+    if (categoryFilter) {
+      updated = reordered;
+      setCategoryOrderIds(reordered.map((product) => product.id));
+    } else {
+      const pageOffset = (page - 1) * PAGE_SIZE;
+      updated = reordered.map((product, index) => ({
+        ...product,
+        order: pageOffset + index,
+      }));
+      setProducts(updated);
 
-    setProducts(updated);
-
-    if (pageCache?.storeId === storeId) {
-      pageCache.products = updated;
+      if (pageCache?.storeId === storeId) {
+        pageCache.products = updated;
+      }
     }
 
     setSavingOrder(true);
 
     try {
-      const batch = writeBatch(db);
-
-      updated.forEach((p) => {
-        batch.update(doc(db, "stores", storeId, "products", p.id), {
-          order: p.order,
-          updatedAt: serverTimestamp(),
-        });
+      const { error } = await supabase.rpc("reorder_store_products", {
+        p_store_id: storeId,
+        p_product_ids: updated.map((product) => product.id),
+        p_category_id: categoryFilter || null,
+        p_start: categoryFilter ? 0 : (page - 1) * PAGE_SIZE,
       });
-
-      await batch.commit();
-
-      if (allLoaded) {
-        await reloadAllProducts();
-      }
+      if (error) throw error;
     } catch (err) {
       console.error("Error guardando orden:", err);
-      alert("No se pudo guardar el orden. Intenta de nuevo.");
-      await loadFirstPage();
+      const message = err instanceof Error ? err.message : String((err as any)?.message || "");
+      alert(`No se pudo guardar el orden.${message ? ` ${message}` : " Intenta de nuevo."}`);
+      if (categoryFilter) setCategoryOrderIds(visibleItems.map((product) => product.id));
+      else await loadFirstPage();
     } finally {
       setSavingOrder(false);
     }
@@ -1340,6 +1334,7 @@ const ProductsView: React.FC = () => {
       await loadFirstPage();
       resetCreateForm();
       setCreateVariants([]);
+      setCreateModalOpen(false);
     } catch (err) {
       console.error(err);
       const limitMessage = getPlanLimitMessage(err);
@@ -1693,11 +1688,28 @@ const ProductsView: React.FC = () => {
 
   if (!storeId) return <div className="p-8 text-center">Buscando configuración de tienda...</div>;
 
-  const listToRender = search ? searchResults : products;
+  const baseList = search ? searchResults : categoryFilter ? allProducts : products;
+  const listToRender = categoryFilter
+    ? (() => {
+      const rank = new Map(categoryOrderIds.map((id, index) => [id, index]));
+      return baseList
+        .filter((product) => (product.categoryIds?.length ? product.categoryIds : [product.categoryId]).includes(categoryFilter))
+        .sort((a, b) => {
+          const aRank = rank.get(a.id);
+          const bRank = rank.get(b.id);
+          if (aRank !== undefined && bRank !== undefined) return aRank - bRank;
+          if (aRank !== undefined) return -1;
+          if (bRank !== undefined) return 1;
+          return getProductOrderValue(a) - getProductOrderValue(b);
+        });
+    })()
+    : baseList;
+  const canReorder = !search;
+  const categoryNameById = new Map(categories.map((category) => [category.id, category.name]));
 
   return (
     <div className="space-y-8">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Productos</h1>
           <p className="mt-1 text-sm text-gray-500">
@@ -1706,6 +1718,9 @@ const ProductsView: React.FC = () => {
               : `${productCount} de ${planAccess.productLimit} creados · ${Math.max(0, planAccess.productLimit - productCount)} disponibles`}
           </p>
         </div>
+        <button type="button" onClick={() => setCreateModalOpen(true)} className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white shadow-sm hover:bg-indigo-700">
+          <i className="fa-solid fa-plus" /> Nuevo producto
+        </button>
         {/* {!hasActiveSubscription && (
           <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-xs px-3 py-1.5 rounded-lg">
             <i className="fa-solid fa-lock text-amber-500" />
@@ -1731,7 +1746,9 @@ const ProductsView: React.FC = () => {
 
       <div className="grid grid-cols-1 gap-8">
         {/* CREATE */}
-        <div className="bg-white p-6 rounded-xl border">
+        {createModalOpen ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !isSubmitting) setCreateModalOpen(false); }}>
+        <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl border bg-white p-6 shadow-2xl">
+          <div className="mb-5 flex justify-end"><button type="button" onClick={() => setCreateModalOpen(false)} disabled={isSubmitting} className="grid h-10 w-10 place-items-center rounded-full text-slate-500 hover:bg-slate-100 disabled:opacity-50" aria-label="Cerrar"><i className="fa-solid fa-xmark" /></button></div>
           <h2 className="font-bold mb-4">Añadir Producto</h2>
           <form onSubmit={handleAddProduct} className="space-y-4">
             <input type="text" placeholder="Nombre" value={name} onChange={(e) => setName(e.target.value)} className="w-full p-2 border rounded" required />
@@ -1828,14 +1845,25 @@ const ProductsView: React.FC = () => {
             </div>
             {useVariants ? (<VariantsEditor variants={createVariants} onChange={setCreateVariants} />) : null}
 
-            <button type="submit" disabled={isSubmitting} className="w-full bg-indigo-600 text-white py-2 rounded font-bold disabled:opacity-50">Guardar</button>
+            <div className="sticky bottom-0 flex gap-3 border-t bg-white pt-4">
+              <button type="button" onClick={() => setCreateModalOpen(false)} disabled={isSubmitting} className="flex-1 rounded-xl bg-slate-100 py-3 font-bold text-slate-700 disabled:opacity-50">Cancelar</button>
+              <button type="submit" disabled={isSubmitting} className="flex-1 rounded-xl bg-indigo-600 py-3 font-bold text-white disabled:opacity-50">{isSubmitting ? "Guardando..." : "Guardar producto"}</button>
+            </div>
           </form>
         </div>
+        </div> : null}
 
         {/* LIST */}
-        <div className="lg:col-span-2 bg-white rounded-xl border overflow-hidden">
-          <div className="p-4 border-b bg-white">
-            <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+        <div className="lg:col-span-2 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/60">
+          <div className="space-y-4 border-b border-slate-200 bg-white p-4">
+            <div className="grid gap-2 md:grid-cols-[300px_1fr]">
+              <label className="relative">
+                <i className="fa-solid fa-tag absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="h-12 w-full appearance-none rounded-xl border border-slate-200 bg-white pl-11 pr-10 text-sm font-medium text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100">
+                  <option value="">Todas las categorias</option>
+                  {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                </select>
+              </label>
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -1843,7 +1871,7 @@ const ProductsView: React.FC = () => {
                 className="w-full p-2 border rounded"
               />
 
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 md:col-span-2">
                 {search ? (
                   <button
                     type="button"
@@ -1952,27 +1980,15 @@ const ProductsView: React.FC = () => {
               <DndContext
                 sensors={sensors}
                 collisionDetection={closestCenter}
-                onDragEnd={handleDragEnd}
+                onDragEnd={canReorder ? handleDragEnd : undefined}
               >
                 <SortableContext
-                  items={products.map((p) => p.id)}
-                  strategy={verticalListSortingStrategy}
+                  items={listToRender.map((p) => p.id)}
+                  strategy={rectSortingStrategy}
                 >
-              <table className="min-w-[720px] w-full text-left">
-                <thead className="bg-gray-50 text-[10px] uppercase font-bold text-gray-500">
-                  <tr>
-                    {/* Columna handle drag */}
-                    {!search && <th className="px-3 py-4 w-8" />}
-                    <th className="px-4 sm:px-6 py-4">Producto</th>
-                    <th className="px-4 sm:px-6 py-4">Precio</th>
-                    <th className="px-4 sm:px-6 py-4">Variantes</th>
-                    <th className="px-4 sm:px-6 py-4 text-right">Acciones</th>
-                  </tr>
-                </thead>
-
-                <tbody className="divide-y">
-                  {!search ? (
-                    products.map((prod, index) => {
+              <div className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2 xl:grid-cols-3">
+                  {canReorder ? (
+                    listToRender.map((prod) => {
                           const hasVariants = (prod.variants?.length ?? 0) > 0;
 
                           const displayPrice = hasVariants
@@ -1982,19 +1998,19 @@ const ProductsView: React.FC = () => {
                             : formatCOP(prod.price);
 
                           return (
-                            <SortableProductRow
+                            <SortableProductCard
                               key={prod.id}
                               prod={prod}
-                              index={index}
                               displayPrice={displayPrice}
-                              hasVariants={hasVariants}
+                              categoryNames={(prod.categoryIds?.length ? prod.categoryIds : [prod.categoryId]).filter(Boolean).map((id) => categoryNameById.get(id || "")).filter(Boolean).join(", ")}
+                              canDrag={canReorder}
                               openEdit={openEdit}
                               handleDeleteProduct={handleDeleteProduct}
                             />
                           );
                         })
                   ) : (
-                    searchResults.map((prod) => {
+                    listToRender.map((prod) => {
                       const hasVariants = (prod.variants?.length ?? 0) > 0;
 
                       const displayPrice = hasVariants
@@ -2004,81 +2020,24 @@ const ProductsView: React.FC = () => {
                         : formatCOP(prod.price);
 
                       return (
-                        <tr key={prod.id} className="text-sm transition-colors">
-                          <td className="px-4 sm:px-6 py-4 font-medium">
-                            <div className="flex items-center gap-3">
-                              {prod.images?.[0]?.url ? (
-                                <img
-                                  src={cldImg(prod.images[0].url, {
-                                    w: 80,
-                                    h: 80,
-                                    crop: "fill",
-                                  })}
-                                  alt={prod.name}
-                                  className="w-10 h-10 rounded object-cover border shrink-0"
-                                  loading="lazy"
-                                />
-                              ) : (
-                                <div className="w-10 h-10 rounded bg-gray-100 border shrink-0" />
-                              )}
-
-                              <div className="min-w-0 flex-1">
-                                <div className="font-semibold text-gray-900 truncate">
-                                  {prod.name}
-                                </div>
-                                <div className="text-xs text-gray-400 line-clamp-2 sm:line-clamp-1">
-                                  {prod.description || ""}
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-
-                          <td className="px-4 sm:px-6 py-4 font-bold text-indigo-600 whitespace-nowrap">
-                            {displayPrice}
-                          </td>
-
-                          <td className="px-4 sm:px-6 py-4 text-gray-600 whitespace-nowrap">
-                            {hasVariants ? prod.variants?.length : "-"}
-                          </td>
-
-                          <td className="px-4 sm:px-6 py-4 text-right whitespace-nowrap">
-                            <button
-                              onClick={() => openEdit(prod)}
-                              className="inline-flex items-center justify-center w-10 h-10 rounded-lg border border-gray-200 text-gray-500 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50"
-                              title="Editar"
-                              type="button"
-                            >
-                              <i className="fa-solid fa-pen" />
-                            </button>
-
-                            <button
-                              onClick={() => handleDeleteProduct(prod)}
-                              className="ml-2 inline-flex items-center justify-center w-10 h-10 rounded-lg border border-gray-200 text-gray-500 hover:text-red-600 hover:border-red-200 hover:bg-red-50"
-                              title="Eliminar"
-                              type="button"
-                            >
-                              <i className="fa-solid fa-trash-can" />
-                            </button>
-                          </td>
-                        </tr>
+                        <SortableProductCard key={prod.id} prod={prod} displayPrice={displayPrice}
+                          categoryNames={(prod.categoryIds?.length ? prod.categoryIds : [prod.categoryId]).filter(Boolean).map((id) => categoryNameById.get(id || "")).filter(Boolean).join(", ")}
+                          canDrag={canReorder}
+                          openEdit={openEdit} handleDeleteProduct={handleDeleteProduct} />
                       );
                     })
                   )}
 
                   {!listToRender.length ? (
-                    <tr>
-                      <td className="px-6 py-8 text-gray-400" colSpan={search ? 4 : 5}>
+                    <div className="col-span-full px-6 py-12 text-center text-gray-400">
                         Aún no hay productos.
-                      </td>
-                    </tr>
+                    </div>
                   ) : null}
-                </tbody>
-
-              </table>
+              </div>
                 </SortableContext>
               </DndContext>
 
-              {!search ? (
+              {!search && !categoryFilter ? (
                 <Paginator page={page} hasNext={hasNext} hasPrev={page > 1} loading={loadingPage} onNext={goNext} onPrev={goPrev} />
               ) : null}
             </div>

@@ -539,6 +539,14 @@ const CatalogView: React.FC = () => {
         const parsed = new Date(value ?? 0).getTime();
         return Number.isNaN(parsed) ? 0 : parsed;
       };
+      const aHasOrder = typeof a.order === "number" && Number.isFinite(a.order);
+      const bHasOrder = typeof b.order === "number" && Number.isFinite(b.order);
+
+      // El orden manual siempre tiene prioridad. Los productos antiguos que
+      // nunca fueron ordenados quedan al final, del mas nuevo al mas antiguo.
+      if (aHasOrder && bHasOrder && a.order !== b.order) return a.order - b.order;
+      if (aHasOrder !== bHasOrder) return aHasOrder ? -1 : 1;
+
       const aTime = getCreatedAtTime(a.createdAt);
       const bTime = getCreatedAtTime(b.createdAt);
       return bTime - aTime;
@@ -714,6 +722,39 @@ const CatalogView: React.FC = () => {
 
   const storeIdRef = useRef<string | null>(null);
   const productsRequestIdRef = useRef(0);
+
+  const fetchOrderedCategoryPage = useCallback(async (
+    storeId: string,
+    categoryId: string,
+    pageOffset: number,
+  ) => {
+    const { data: orderedRows, error: orderError } = await publicSupabase.rpc(
+      "get_public_catalog_product_ids",
+      {
+        p_store_id: storeId,
+        p_category_id: categoryId,
+        p_offset: pageOffset,
+        p_limit: PAGE_SIZE + 1,
+      },
+    );
+    if (orderError) {
+      const migrationPending = orderError.code === "PGRST202" ||
+        String(orderError.message || "").includes("get_public_catalog_product_ids");
+      if (migrationPending) return null;
+      throw orderError;
+    }
+    const ids = (orderedRows ?? []).map((row: any) => row.product_id).filter(Boolean);
+    if (!ids.length) return [] as Product[];
+
+    const baseRef = collection(publicSupabase, "stores", storeId, "products");
+    const snap = await getDocs(query(baseRef, where("id", "in", ids)));
+    const byId = new Map(snap.docs.map((item) => [item.id, {
+      id: item.id,
+      ...(item.data() as any),
+    } as Product]));
+    return ids.map((id: string) => byId.get(id)).filter(Boolean) as Product[];
+  }, []);
+
   useEffect(() => {
     if (!store || catalogUnavailableReason) return;
     storeIdRef.current = store.id;
@@ -739,11 +780,24 @@ const CatalogView: React.FC = () => {
       setQueryError(null);
       const baseRef = collection(publicSupabase, "stores", storeId, "products");
       try {
+        if (categoryId !== "all") {
+          const orderedProducts = await fetchOrderedCategoryPage(storeId, categoryId, 0);
+          if (requestId !== productsRequestIdRef.current) return;
+          if (orderedProducts) {
+          const pageProducts = orderedProducts.slice(0, PAGE_SIZE);
+          const more = orderedProducts.length > PAGE_SIZE;
+          setCategoryCache(storeId, categoryId, { products: pageProducts, hasMore: more });
+          setProducts(pageProducts);
+          setHasMore(more);
+          return;
+          }
+        }
         const constraints: QueryConstraint[] = [];
         constraints.push(where("isActive", "==", true));
         if (categoryId !== "all")
           constraints.push(where("categoryIds", "array-contains", categoryId));
         constraints.push(
+          orderBy("order", "asc"),
           orderBy("createdAt", "desc"),
           limit(PAGE_SIZE + 1),
         );
@@ -779,7 +833,7 @@ const CatalogView: React.FC = () => {
         if (requestId === productsRequestIdRef.current) setProductsLoading(false);
       }
     },
-    [],
+    [fetchOrderedCategoryPage],
   );
 
   const fetchMorePage = useCallback(async () => {
@@ -793,11 +847,28 @@ const CatalogView: React.FC = () => {
         return;
       }
       const baseRef = collection(publicSupabase, "stores", store.id, "products");
+      if (activeCategoryId !== "all") {
+        const loadedProducts = await fetchOrderedCategoryPage(
+          store.id,
+          activeCategoryId,
+          cached.products.length,
+        );
+        if (loadedProducts) {
+        const pageProducts = loadedProducts.slice(0, PAGE_SIZE);
+        const more = loadedProducts.length > PAGE_SIZE;
+        const nextProducts = [...cached.products, ...pageProducts];
+        setProducts(nextProducts);
+        setCategoryCache(store.id, activeCategoryId, { products: nextProducts, hasMore: more });
+        setHasMore(more);
+        return;
+        }
+      }
       const constraints: QueryConstraint[] = [];
       constraints.push(where("isActive", "==", true));
       if (activeCategoryId !== "all")
         constraints.push(where("categoryIds", "array-contains", activeCategoryId));
       constraints.push(
+        orderBy("order", "asc"),
         orderBy("createdAt", "desc"),
         offset(cached.products.length),
         limit(PAGE_SIZE + 1),

@@ -947,8 +947,14 @@ const applyServerConstraints = (builder: any, table: string, constraints: QueryC
 
   for (const constraint of constraints) {
     if (constraint.type === "orderBy") {
-      next = next.order(mapField(table, constraint.field), {
+      const mappedField = mapField(table, constraint.field);
+      next = next.order(mappedField, {
         ascending: constraint.direction !== "desc",
+        // En productos, un sort_order nulo significa que el administrador
+        // nunca definio una posicion. Debe aparecer despues del orden manual.
+        ...(table === "products" && mappedField === "sort_order"
+          ? { nullsFirst: false }
+          : {}),
       });
     }
   }
