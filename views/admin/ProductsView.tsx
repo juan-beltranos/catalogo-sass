@@ -92,6 +92,29 @@ const FREE_MAX_VIDEOS = 0;
 const PRO_MAX_IMAGES = 5;
 const PRO_MAX_VIDEOS = 1;
 
+const validateProductPricing = (
+  basePrice: number,
+  variants: Variant[],
+  discountEnabled: boolean,
+  discountType: "percent" | "amount",
+  discountValue: number,
+) => {
+  if (!Number.isFinite(basePrice) || basePrice <= 0) return "El precio del producto debe ser mayor que cero.";
+  if (variants.some((variant) => !Number.isFinite(Number(variant.price)) || Number(variant.price) <= 0)) {
+    return "Todas las variantes deben tener un precio mayor que cero.";
+  }
+  if (!discountEnabled) return null;
+  if (!Number.isFinite(discountValue) || discountValue <= 0) return "Ingresa un descuento mayor que cero.";
+  if (discountType === "percent" && discountValue >= 100) return "El descuento porcentual debe estar entre 1% y 99%.";
+
+  const applicablePrices = variants.length > 0 ? variants.map((variant) => Number(variant.price)) : [basePrice];
+  const lowestPrice = Math.min(...applicablePrices);
+  if (discountType === "amount" && discountValue >= lowestPrice) {
+    return `El descuento debe ser menor que el precio más bajo (${formatCOP(lowestPrice)}).`;
+  }
+  return null;
+};
+
 const getProductOrderValue = (product: Product) =>
   typeof product.order === "number" && Number.isFinite(product.order)
     ? product.order
@@ -1269,6 +1292,12 @@ const ProductsView: React.FC = () => {
     const cleanName = name.trim();
     const bp = parseCOP(priceInput);
     if (!cleanName || !categoryIds.length || !bp) return;
+    const variants = useVariants ? (createVariants || []) : [];
+    const pricingError = validateProductPricing(bp, variants, hasDiscount, discountType, discountValueNum);
+    if (pricingError) {
+      alert(pricingError);
+      return;
+    }
 
     if (!hasActiveSubscription) {
       const countSnap = await getCountFromServer(prodsRef);
@@ -1288,11 +1317,10 @@ const ProductsView: React.FC = () => {
 
       const images = await uploadImages(allowedImages);
       const videos = await uploadVideos(allowedVideos);
-      const variants = useVariants ? (createVariants || []) : [];
       const cleanSku = sku.trim() || null;
       const wholesalePrice = parseCOP(wholesalePriceInput) || null;
       const discount = hasDiscount && discountValueNum > 0
-        ? { type: discountType, value: discountType === "percent" ? Math.min(100, Math.max(0, discountValueNum)) : Math.max(0, discountValueNum) }
+        ? { type: discountType, value: discountType === "percent" ? Math.min(99, Math.max(0, discountValueNum)) : Math.max(0, discountValueNum) }
         : null;
 
       // El nuevo producto va al final del orden
@@ -1412,10 +1440,16 @@ const ProductsView: React.FC = () => {
     setIsSubmitting(true);
     try {
       const bp = parseCOP(editPriceInput);
+      const variants = editUseVariants ? (editingProduct.variants ?? []) : [];
+      const pricingError = validateProductPricing(bp, variants, editHasDiscount, editDiscountType, editDiscountValueNum);
+      if (pricingError) {
+        alert(pricingError);
+        return;
+      }
       const cleanSku = editSku.trim() || null;
       const wholesalePrice = parseCOP(editWholesalePriceInput) || null;
       const discount = editHasDiscount && editDiscountValueNum > 0
-        ? { type: editDiscountType, value: editDiscountType === "percent" ? Math.min(100, Math.max(0, editDiscountValueNum)) : Math.max(0, editDiscountValueNum) }
+        ? { type: editDiscountType, value: editDiscountType === "percent" ? Math.min(99, Math.max(0, editDiscountValueNum)) : Math.max(0, editDiscountValueNum) }
         : null;
 
       const productChanges = {
@@ -1425,7 +1459,7 @@ const ProductsView: React.FC = () => {
         categoryId: editingProduct.categoryIds?.[0] ?? editingProduct.categoryId,
         categoryIds: editingProduct.categoryIds ?? (editingProduct.categoryId ? [editingProduct.categoryId] : []),
         options: [],
-        variants: editUseVariants ? (editingProduct.variants ?? []) : [],
+        variants,
         images: editingProduct.images ?? [], videos: editingProduct.videos ?? [],
         isActive: editingProduct.isActive ?? true,
         allowsCashOnDelivery: editingProduct.allowsCashOnDelivery ?? true,
@@ -1523,9 +1557,19 @@ const ProductsView: React.FC = () => {
   const finalPrice = useMemo(() => {
     if (!hasDiscount) return basePrice;
     if (!basePrice) return 0;
-    if (discountType === "percent") return Math.max(0, Math.round(basePrice * (1 - Math.min(100, Math.max(0, discountValueNum)) / 100)));
-    return Math.max(0, basePrice - Math.max(0, discountValueNum));
-  }, [hasDiscount, discountType, discountValueNum, basePrice]);
+    const error = validateProductPricing(basePrice, useVariants ? createVariants : [], true, discountType, discountValueNum);
+    if (error) return basePrice;
+    if (discountType === "percent") return Math.round(basePrice * (1 - discountValueNum / 100));
+    return basePrice - discountValueNum;
+  }, [hasDiscount, discountType, discountValueNum, basePrice, useVariants, createVariants]);
+
+  const createPricingError = validateProductPricing(
+    basePrice,
+    useVariants ? createVariants : [],
+    hasDiscount,
+    discountType,
+    discountValueNum,
+  );
 
   const savings = useMemo(() => { if (!hasDiscount) return 0; return Math.max(0, basePrice - finalPrice); }, [hasDiscount, basePrice, finalPrice]);
 
@@ -1535,9 +1579,20 @@ const ProductsView: React.FC = () => {
   const editFinalPrice = useMemo(() => {
     if (!editHasDiscount) return editBasePrice;
     if (!editBasePrice) return 0;
-    if (editDiscountType === "percent") return Math.max(0, Math.round(editBasePrice * (1 - Math.min(100, Math.max(0, editDiscountValueNum)) / 100)));
-    return Math.max(0, editBasePrice - Math.max(0, editDiscountValueNum));
-  }, [editHasDiscount, editDiscountType, editDiscountValueNum, editBasePrice]);
+    const variants = editUseVariants ? (editingProduct?.variants ?? []) : [];
+    const error = validateProductPricing(editBasePrice, variants, true, editDiscountType, editDiscountValueNum);
+    if (error) return editBasePrice;
+    if (editDiscountType === "percent") return Math.round(editBasePrice * (1 - editDiscountValueNum / 100));
+    return editBasePrice - editDiscountValueNum;
+  }, [editHasDiscount, editDiscountType, editDiscountValueNum, editBasePrice, editUseVariants, editingProduct?.variants]);
+
+  const editPricingError = validateProductPricing(
+    editBasePrice,
+    editUseVariants ? (editingProduct?.variants ?? []) : [],
+    editHasDiscount,
+    editDiscountType,
+    editDiscountValueNum,
+  );
 
   const editSavings = useMemo(() => { if (!editHasDiscount) return 0; return Math.max(0, editBasePrice - editFinalPrice); }, [editHasDiscount, editBasePrice, editFinalPrice]);
 
@@ -1703,6 +1758,7 @@ const ProductsView: React.FC = () => {
                     <option value="amount">Valor ({getActiveCurrencyCode()})</option>
                   </select>
                   <input type="text" placeholder={discountType === "percent" ? "Ej: 10" : "Ej: 20000"} value={discountValueInput} onChange={(e) => setDiscountValueInput(e.target.value)} className="w-full p-2 border rounded sm:col-span-2" />
+                  {hasDiscount && createPricingError ? <div className="sm:col-span-3 text-xs font-semibold text-red-600">{createPricingError}</div> : null}
                   <div className="sm:col-span-3 text-xs text-gray-500">
                     {basePrice ? (<><div>Precio original: <b>{formatCOP(basePrice)}</b></div><div>Precio final: <b className="text-indigo-700">{formatCOP(finalPrice)}</b>{savings > 0 ? <> — Ahorro: <b>{formatCOP(savings)}</b></> : null}</div></>) : (<div>Escribe el precio para ver el cálculo.</div>)}
                   </div>
@@ -2073,6 +2129,7 @@ const ProductsView: React.FC = () => {
                         <option value="amount">Valor ({getActiveCurrencyCode()})</option>
                       </select>
                       <input type="text" value={editDiscountValueInput} onChange={(e) => setEditDiscountValueInput(e.target.value)} placeholder={editDiscountType === "percent" ? "Ej: 10" : "Ej: 20000"} className="p-2 border rounded sm:col-span-2" />
+                      {editHasDiscount && editPricingError ? <div className="sm:col-span-3 text-xs font-semibold text-red-600">{editPricingError}</div> : null}
                       <div className="sm:col-span-3 text-xs text-gray-500">
                         {editBasePrice ? (<><div>Precio original: <b>{formatCOP(editBasePrice)}</b></div><div>Precio final: <b className="text-indigo-700">{formatCOP(editFinalPrice)}</b>{editSavings > 0 && <> — Ahorro: <b>{formatCOP(editSavings)}</b></>}</div></>) : (<div>Escribe el precio para calcular.</div>)}
                       </div>

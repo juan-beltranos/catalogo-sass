@@ -48,6 +48,33 @@ export async function saveProduct(
   if (!storeId || !productPayload(product).name) {
     return { ok: false, status: 400, error: "Faltan datos del producto." };
   }
+  const basePrice = Number(product.price || 0);
+  const variants = Array.isArray(product.variants) ? product.variants : [];
+  if (!Number.isFinite(basePrice) || basePrice <= 0) {
+    return { ok: false, status: 400, error: "El precio del producto debe ser mayor que cero." };
+  }
+  if (variants.some((variant: any) => !Number.isFinite(Number(variant.price)) || Number(variant.price) <= 0)) {
+    return { ok: false, status: 400, error: "Todas las variantes deben tener un precio mayor que cero." };
+  }
+  if (product.discount) {
+    const discountValue = Number(product.discount.value || 0);
+    const discountType = product.discount.type;
+    if (!Number.isFinite(discountValue) || discountValue <= 0) {
+      return { ok: false, status: 400, error: "El descuento debe ser mayor que cero." };
+    }
+    if (discountType === "percent" && discountValue >= 100) {
+      return { ok: false, status: 400, error: "El descuento porcentual debe estar entre 1% y 99%." };
+    }
+    const lowestPrice = variants.length
+      ? Math.min(...variants.map((variant: any) => Number(variant.price)))
+      : basePrice;
+    if (discountType === "amount" && discountValue >= lowestPrice) {
+      return { ok: false, status: 400, error: "El descuento debe ser menor que el precio más bajo." };
+    }
+    if (discountType !== "percent" && discountType !== "amount") {
+      return { ok: false, status: 400, error: "El tipo de descuento no es válido." };
+    }
+  }
 
   const { data: store, error: storeError } = await client
     .from("stores")

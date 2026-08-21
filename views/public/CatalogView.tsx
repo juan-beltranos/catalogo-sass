@@ -41,6 +41,7 @@ import {
   getBaseUnitPrice,
   getFinalUnitPrice,
   getProductCardPrice,
+  hasValidDiscountForPrice,
 } from "@/helpers/pricing";
 import { evaluateCommerceRules } from "@/helpers/commerceRules";
 import { getCatalogShareUrl } from "@/helpers/catalogLinks";
@@ -1178,9 +1179,9 @@ const CatalogView: React.FC = () => {
   };
 
   const hasValidDiscount = (p?: Product | null) => {
-    const d = p?.discount;
-    if (!d || !d.value) return false;
-    return (Number(d.value) || 0) > 0;
+    if (!p) return false;
+    const cardPrice = getProductCardPrice(p, false);
+    return hasValidDiscountForPrice(cardPrice.base, p.discount);
   };
 
   const handleCategoryChange = (categoryId: string) => {
@@ -1532,8 +1533,8 @@ const CatalogView: React.FC = () => {
                 ? cldImg(img, { w: 600, h: 600, crop: "fill" })
                 : "";
               const hasVariants = (prod.variants?.length ?? 0) > 0;
-              const badge = discountBadgeText((prod as any).discount);
               const discOk = !isWholesaleCatalog && hasValidDiscount(prod);
+              const badge = discOk ? discountBadgeText((prod as any).discount) : null;
               const cardPrice = getProductCardPrice(prod, isWholesaleCatalog);
 
               return (

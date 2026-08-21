@@ -7,16 +7,23 @@ export type Discount = { type: "percent" | "amount"; value: number } | null | un
 export const hasValidDiscount = (discount: Discount) => {
     if (!discount) return false;
     const v = Number(discount.value || 0);
-    return v > 0;
+    if (!Number.isFinite(v) || v <= 0) return false;
+    return discount.type === "percent" ? v < 100 : discount.type === "amount";
+};
+
+export const hasValidDiscountForPrice = (base: number, discount: Discount) => {
+    const price = Number(base || 0);
+    if (!Number.isFinite(price) || price <= 0 || !hasValidDiscount(discount)) return false;
+    return discount!.type === "percent" || Number(discount!.value) < price;
 };
 
 export const applyDiscount = (base: number, discount: Discount) => {
     const price = Number(base || 0);
     if (!price) return 0;
-    if (!hasValidDiscount(discount)) return price;
+    if (!hasValidDiscountForPrice(price, discount)) return price;
 
     if (discount!.type === "percent") {
-        const pct = Math.min(100, Math.max(0, Number(discount!.value) || 0));
+        const pct = Math.min(99, Math.max(0, Number(discount!.value) || 0));
         return Math.max(0, Math.round(price * (1 - pct / 100)));
     }
 
@@ -28,7 +35,7 @@ export const discountBadgeText = (discount: Discount) => {
     if (!hasValidDiscount(discount)) return null;
 
     if (discount!.type === "percent") {
-        const pct = Math.min(100, Math.max(0, Number(discount!.value) || 0));
+        const pct = Math.min(99, Math.max(0, Number(discount!.value) || 0));
         return pct ? `-${pct}%` : null;
     }
 
@@ -40,7 +47,10 @@ export const discountBadgeText = (discount: Discount) => {
 export const getBaseUnitPrice = (p: Product, v?: Variant, isWholesale = false) => {
     const wholesalePrice = Number(p.wholesalePrice || 0);
     if (isWholesale && wholesalePrice > 0) return wholesalePrice;
-    return v ? Number(v.price || 0) : Number(p.price || 0);
+    const productPrice = Number(p.price || 0);
+    if (!v) return productPrice;
+    const variantPrice = Number(v.price || 0);
+    return variantPrice > 0 ? variantPrice : productPrice;
 };
 
 // Precio final (con descuento) según variante o producto
@@ -65,7 +75,7 @@ export const getProductCardPrice = (p: Product, isWholesale = false) => {
     }
 
     const prices = vars.map(v => Number(v.price || 0)).filter(n => n > 0);
-    const minBase = prices.length ? Math.min(...prices) : 0;
+    const minBase = prices.length ? Math.min(...prices) : Number(p.price || 0);
     const minFinal = applyDiscount(minBase, (p as any).discount);
 
     return { hasVariants: true, base: minBase, final: minFinal };

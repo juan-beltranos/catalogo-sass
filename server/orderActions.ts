@@ -49,11 +49,17 @@ export async function createPublicOrder(input: any, env: Env = process.env) {
     const variant: any = item.variantId ? variantsById.get(String(item.variantId)) : null;
     if (item.variantId && (!variant || variant.product_id !== product.id)) throw new Error(`Variante no disponible: ${item.productName || "producto"}`);
     const wholesale = item.priceType === "wholesale" && Number(product.wholesale_price || 0) > 0;
-    let unitPrice = wholesale ? Number(product.wholesale_price) : Number(variant?.price ?? product.base_price ?? 0);
-    if (!wholesale && Number(product.discount_value || 0) > 0) {
-      unitPrice = product.discount_type === "percent"
-        ? Math.round(unitPrice * (1 - Math.min(100, Number(product.discount_value)) / 100))
-        : Math.max(0, unitPrice - Number(product.discount_value));
+    const variantPrice = Number(variant?.price || 0);
+    let unitPrice = wholesale
+      ? Number(product.wholesale_price)
+      : variant && variantPrice > 0 ? variantPrice : Number(product.base_price || 0);
+    const discountValue = Number(product.discount_value || 0);
+    const validPercent = product.discount_type === "percent" && discountValue > 0 && discountValue < 100;
+    const validAmount = product.discount_type === "amount" && discountValue > 0 && discountValue < unitPrice;
+    if (!wholesale && (validPercent || validAmount)) {
+      unitPrice = validPercent
+        ? Math.round(unitPrice * (1 - discountValue / 100))
+        : unitPrice - discountValue;
     }
     const qty = Math.max(1, Math.floor(Number(item.qty) || 1));
       return { ...item, qty, unitPrice: Math.max(0, Math.round(unitPrice)), subtotal: Math.max(0, Math.round(unitPrice)) * qty };
