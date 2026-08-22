@@ -37,6 +37,7 @@ const byPriority = <T extends { priority?: number }>(rules: T[]) =>
   [...rules].sort((a, b) => Number(b.priority || 0) - Number(a.priority || 0));
 
 export const normalizeCommerceRules = (value: any): CommerceRules => ({
+  sortProductsByNewest: value?.sortProductsByNewest === true,
   pricing: (Array.isArray(value?.pricing) ? value.pricing : []).map((rule: any, index: number): PricingRule => ({
     id: String(rule.id || `pricing_${index}`), name: String(rule.name || "Regla de precio"),
     enabled: rule.enabled !== false, priority: Number(rule.priority || 0), condition: rule.condition || {},

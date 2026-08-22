@@ -90,6 +90,7 @@ export type ShippingRule = {
 export type CommerceRules = {
     pricing: PricingRule[];
     shipping: ShippingRule[];
+    sortProductsByNewest?: boolean;
 };
 
 export type CheckoutFieldType = "text" | "number" | "tel" | "email" | "textarea" | "select" | "date";

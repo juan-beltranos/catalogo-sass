@@ -542,6 +542,10 @@ const CatalogView: React.FC = () => {
       const aHasOrder = typeof a.order === "number" && Number.isFinite(a.order);
       const bHasOrder = typeof b.order === "number" && Number.isFinite(b.order);
 
+      if (store?.commerceRules?.sortProductsByNewest === true) {
+        return getCreatedAtTime(b.createdAt) - getCreatedAtTime(a.createdAt);
+      }
+
       // El orden manual siempre tiene prioridad. Los productos antiguos que
       // nunca fueron ordenados quedan al final, del mas nuevo al mas antiguo.
       if (aHasOrder && bHasOrder && a.order !== b.order) return a.order - b.order;
@@ -645,6 +649,8 @@ const CatalogView: React.FC = () => {
         // La animación empieza cuando la identidad real ya está disponible,
         // evitando mostrar primero el color o el logo de respaldo.
         introStartedAtRef.current = Date.now();
+        clearStoreCache(s.id);
+        searchProductsCache.delete(s.id);
         setStore(s);
         setCatalogUnavailableReason(unavailableReason);
         document.title = unavailableReason
@@ -718,7 +724,7 @@ const CatalogView: React.FC = () => {
     } finally {
       setSearchLoading(false);
     }
-  }, [search]);
+  }, [search, store?.commerceRules?.sortProductsByNewest]);
 
   const storeIdRef = useRef<string | null>(null);
   const productsRequestIdRef = useRef(0);
@@ -780,7 +786,7 @@ const CatalogView: React.FC = () => {
       setQueryError(null);
       const baseRef = collection(publicSupabase, "stores", storeId, "products");
       try {
-        if (categoryId !== "all") {
+        if (categoryId !== "all" && store?.commerceRules?.sortProductsByNewest !== true) {
           const orderedProducts = await fetchOrderedCategoryPage(storeId, categoryId, 0);
           if (requestId !== productsRequestIdRef.current) return;
           if (orderedProducts) {
@@ -796,11 +802,9 @@ const CatalogView: React.FC = () => {
         constraints.push(where("isActive", "==", true));
         if (categoryId !== "all")
           constraints.push(where("categoryIds", "array-contains", categoryId));
-        constraints.push(
-          orderBy("order", "asc"),
-          orderBy("createdAt", "desc"),
-          limit(PAGE_SIZE + 1),
-        );
+        constraints.push(...(store?.commerceRules?.sortProductsByNewest === true
+          ? [orderBy("createdAt", "desc")]
+          : [orderBy("order", "asc"), orderBy("createdAt", "desc")]), limit(PAGE_SIZE + 1));
         const qProds = query(baseRef, ...constraints);
         const snap = await getDocs(qProds);
         if (requestId !== productsRequestIdRef.current) return;
@@ -833,7 +837,7 @@ const CatalogView: React.FC = () => {
         if (requestId === productsRequestIdRef.current) setProductsLoading(false);
       }
     },
-    [fetchOrderedCategoryPage],
+    [fetchOrderedCategoryPage, store?.commerceRules?.sortProductsByNewest],
   );
 
   const fetchMorePage = useCallback(async () => {
@@ -847,7 +851,7 @@ const CatalogView: React.FC = () => {
         return;
       }
       const baseRef = collection(publicSupabase, "stores", store.id, "products");
-      if (activeCategoryId !== "all") {
+      if (activeCategoryId !== "all" && store.commerceRules?.sortProductsByNewest !== true) {
         const loadedProducts = await fetchOrderedCategoryPage(
           store.id,
           activeCategoryId,
@@ -867,12 +871,10 @@ const CatalogView: React.FC = () => {
       constraints.push(where("isActive", "==", true));
       if (activeCategoryId !== "all")
         constraints.push(where("categoryIds", "array-contains", activeCategoryId));
-      constraints.push(
-        orderBy("order", "asc"),
-        orderBy("createdAt", "desc"),
-        offset(cached.products.length),
-        limit(PAGE_SIZE + 1),
-      );
+      constraints.push(...(store.commerceRules?.sortProductsByNewest === true
+        ? [orderBy("createdAt", "desc")]
+        : [orderBy("order", "asc"), orderBy("createdAt", "desc")]),
+        offset(cached.products.length), limit(PAGE_SIZE + 1));
       const snap = await getDocs(query(baseRef, ...constraints));
       const loadedProducts = sortProducts(snap.docs.map((d) => ({
         id: d.id,

@@ -18,7 +18,7 @@ import {
   writeBatch,
 } from "@/lib/supabaseFirestore";
 import { db, supabase } from "@/lib/supabase";
-import { getStoreForOwner } from "@/lib/storeLookup";
+import { getStoreForOwner, invalidateStoreForOwner } from "@/lib/storeLookup";
 import { useAuth } from "../../context/AuthContext";
 import { Product } from "@/interfaces";
 import { ImageItem, ImportedJsonProduct, ProductOption, Variant, VideoItem } from "@/types";
@@ -123,8 +123,13 @@ const getProductOrderValue = (product: Product) =>
 const getProductCreatedAtMillis = (product: Product) => {
   const createdAt = product.createdAt;
   if (createdAt && typeof createdAt.toMillis === "function") return createdAt.toMillis();
+  if (createdAt && typeof createdAt.seconds === "number") return createdAt.seconds * 1000;
   if (createdAt instanceof Date) return createdAt.getTime();
   if (typeof createdAt === "number") return createdAt;
+  if (typeof createdAt === "string") {
+    const parsed = Date.parse(createdAt);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
   return 0;
 };
 
@@ -245,6 +250,9 @@ const ProductsView: React.FC = () => {
 
   // ── Drag & drop state ────────────────────────────────────────────────────
   const [savingOrder, setSavingOrder] = useState(false);
+  const [sortByNewest, setSortByNewest] = useState(false);
+  const [savingSortPreference, setSavingSortPreference] = useState(false);
+  const commerceRulesRef = useRef<any>({ pricing: [], shipping: [] });
   const [exportingExcel, setExportingExcel] = useState(false);
   const [deletingAllProducts, setDeletingAllProducts] = useState(false);
 
@@ -311,6 +319,8 @@ const ProductsView: React.FC = () => {
       if (store) {
         setStoreId(store.id);
         setHasActiveSubscription(store.data.hasActiveSubscription === true);
+        commerceRulesRef.current = store.data.commerceRules ?? { pricing: [], shipping: [] };
+        setSortByNewest(commerceRulesRef.current.sortProductsByNewest === true);
       } else {
         console.error("No se encontró tienda para este usuario");
       }
@@ -1166,15 +1176,16 @@ const ProductsView: React.FC = () => {
         const targetPage =
           mode === "first" ? 1 : mode === "next" ? page + 1 : Math.max(1, page - 1);
         const start = (targetPage - 1) * PAGE_SIZE;
-        const pageQuery = query(
-          prodsRef,
-          orderBy("order", "asc"),
-          orderBy("createdAt", "desc"),
-          limit(PAGE_SIZE + 1),
-          offset(start),
-        );
+        const pageQuery = query(prodsRef,
+          ...(sortByNewest
+            ? [orderBy("createdAt", "desc")]
+            : [orderBy("order", "asc"), orderBy("createdAt", "desc")]),
+          limit(PAGE_SIZE + 1), offset(start));
         const snap = await getDocs(pageQuery);
-        const sortedProducts = sortProductsForAdmin(snap.docs.map(mapDocToProduct));
+        const loadedProducts = snap.docs.map(mapDocToProduct);
+        const sortedProducts = sortByNewest
+          ? [...loadedProducts].sort((a, b) => getProductCreatedAtMillis(b) - getProductCreatedAtMillis(a))
+          : sortProductsForAdmin(loadedProducts);
         const pageProducts = sortedProducts.slice(0, PAGE_SIZE);
         const nextExists = sortedProducts.length > PAGE_SIZE;
 
@@ -1188,7 +1199,7 @@ const ProductsView: React.FC = () => {
         setLoading(false);
       }
     },
-    [prodsRef, storeId, mapDocToProduct, page]
+    [prodsRef, storeId, mapDocToProduct, page, sortByNewest]
   );
 
   const loadFirstPage = useCallback(async () => {
@@ -1275,6 +1286,50 @@ const ProductsView: React.FC = () => {
   };
 
   // ── CRUD (sin cambios) ───────────────────────────────────────────────────
+
+  const handleSortByNewestChange = async (checked: boolean) => {
+    if (!storeId || savingSortPreference) return;
+    const previous = sortByNewest;
+    setSortByNewest(checked);
+    setSavingSortPreference(true);
+    pageCache = null;
+    try {
+      const commerceRules = { ...commerceRulesRef.current, sortProductsByNewest: checked };
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      const response = await fetch("/api/store-settings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token || ""}`,
+        },
+        body: JSON.stringify({
+          storeId,
+          changes: {
+            commerce_rules: commerceRules,
+            updated_at: new Date().toISOString(),
+          },
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "No se pudo guardar la tienda.");
+      commerceRulesRef.current = commerceRules;
+      invalidateStoreForOwner(user?.uid);
+    } catch (error) {
+      console.error("Error guardando preferencia de orden:", error);
+      setSortByNewest(previous);
+      const message = error instanceof Error ? error.message : "Intenta de nuevo.";
+      alert(`No se pudo guardar la preferencia de orden. ${message}`);
+    } finally {
+      setSavingSortPreference(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!storeId) return;
+    pageCache = null;
+    loadFirstPage();
+  }, [sortByNewest]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const discountValueNum = Number((discountValueInput || "").replace(/[^\d]/g, "")) || 0;
   const basePrice = parseCOP(priceInput);
@@ -1691,9 +1746,12 @@ const ProductsView: React.FC = () => {
   const baseList = search ? searchResults : categoryFilter ? allProducts : products;
   const listToRender = categoryFilter
     ? (() => {
+      const categoryProducts = baseList.filter((product) => (product.categoryIds?.length ? product.categoryIds : [product.categoryId]).includes(categoryFilter));
+      if (sortByNewest) {
+        return categoryProducts.sort((a, b) => getProductCreatedAtMillis(b) - getProductCreatedAtMillis(a));
+      }
       const rank = new Map(categoryOrderIds.map((id, index) => [id, index]));
-      return baseList
-        .filter((product) => (product.categoryIds?.length ? product.categoryIds : [product.categoryId]).includes(categoryFilter))
+      return categoryProducts
         .sort((a, b) => {
           const aRank = rank.get(a.id);
           const bRank = rank.get(b.id);
@@ -1703,8 +1761,10 @@ const ProductsView: React.FC = () => {
           return getProductOrderValue(a) - getProductOrderValue(b);
         });
     })()
-    : baseList;
-  const canReorder = !search;
+    : sortByNewest
+      ? [...baseList].sort((a, b) => getProductCreatedAtMillis(b) - getProductCreatedAtMillis(a))
+      : baseList;
+  const canReorder = !search && !sortByNewest;
   const categoryNameById = new Map(categories.map((category) => [category.id, category.name]));
 
   return (
@@ -1872,6 +1932,11 @@ const ProductsView: React.FC = () => {
               />
 
               <div className="flex flex-wrap gap-2 md:col-span-2">
+                <label className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium ${sortByNewest ? "border-indigo-200 bg-indigo-50 text-indigo-700" : "border-slate-200 bg-white text-slate-700"}`}>
+                  <input type="checkbox" checked={sortByNewest} disabled={savingSortPreference}
+                    onChange={(event) => handleSortByNewestChange(event.target.checked)} />
+                  Más recientes primero
+                </label>
                 {search ? (
                   <button
                     type="button"
@@ -1967,8 +2032,8 @@ const ProductsView: React.FC = () => {
             {/* Hint de drag & drop (solo cuando no se busca) */}
             {!search && !loading && products.length > 1 && (
               <div className="mt-2 flex items-center gap-1.5 text-xs text-gray-400">
-                <i className="fa-solid fa-grip-lines" />
-                Arrastra las filas para cambiar el orden en el catálogo
+                <i className={`fa-solid ${sortByNewest ? "fa-lock" : "fa-grip-lines"}`} />
+                {sortByNewest ? "Orden manual bloqueado mientras se muestran los más recientes primero" : "Arrastra las tarjetas para cambiar el orden en el catálogo"}
               </div>
             )}
           </div>
