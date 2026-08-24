@@ -86,12 +86,6 @@ const CategoryMultiSelect: React.FC<{
   );
 };
 
-const FREE_MAX_PRODUCTS = 300;
-const FREE_MAX_IMAGES = 1;
-const FREE_MAX_VIDEOS = 0;
-const PRO_MAX_IMAGES = 5;
-const PRO_MAX_VIDEOS = 1;
-
 const validateProductPricing = (
   basePrice: number,
   variants: Variant[],
@@ -309,8 +303,8 @@ const ProductsView: React.FC = () => {
   const prodsRefRef = useRef<ReturnType<typeof collection> | null>(null);
   const catsRefRef = useRef<ReturnType<typeof collection> | null>(null);
 
-  const maxImages = hasActiveSubscription ? PRO_MAX_IMAGES : FREE_MAX_IMAGES;
-  const maxVideos = hasActiveSubscription ? PRO_MAX_VIDEOS : FREE_MAX_VIDEOS;
+  const maxImages = planAccess.imageLimit ?? Number.POSITIVE_INFINITY;
+  const maxVideos = planAccess.videoLimit ?? Number.POSITIVE_INFINITY;
 
   useEffect(() => {
     if (!user) return;
@@ -1348,11 +1342,11 @@ const ProductsView: React.FC = () => {
       return;
     }
 
-    if (!hasActiveSubscription) {
+    if (planAccess.productLimit !== null) {
       const countSnap = await getCountFromServer(prodsRef);
       const total = countSnap.data().count;
-      if (total >= FREE_MAX_PRODUCTS) {
-        alert(`Has alcanzado el límite de ${FREE_MAX_PRODUCTS} productos.\nActiva tu suscripción para crear productos ilimitados.`);
+      if (total >= planAccess.productLimit) {
+        alert(`Has alcanzado el límite de ${planAccess.productLimit} productos de tu plan.`);
         return;
       }
     }
@@ -1697,11 +1691,11 @@ const ProductsView: React.FC = () => {
       const items: ImportedJsonProduct[] = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.products) ? parsed.products : [];
       if (!items.length) { alert("No encontré productos."); return; }
 
-      if (!hasActiveSubscription) {
+      if (planAccess.productLimit !== null) {
         const countSnap = await getCountFromServer(prodsRef);
         const currentTotal = countSnap.data().count;
-        const available = FREE_MAX_PRODUCTS - currentTotal;
-        if (available <= 0) { alert(`Has alcanzado el límite de ${FREE_MAX_PRODUCTS} productos.`); return; }
+        const available = planAccess.productLimit - currentTotal;
+        if (available <= 0) { alert(`Has alcanzado el límite de ${planAccess.productLimit} productos.`); return; }
         if (items.length > available) {
           const ok = window.confirm(`Solo puedes importar ${available} más. ¿Continuar?`);
           if (!ok) return;
@@ -1784,7 +1778,7 @@ const ProductsView: React.FC = () => {
         {/* {!hasActiveSubscription && (
           <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-xs px-3 py-1.5 rounded-lg">
             <i className="fa-solid fa-lock text-amber-500" />
-            <span>Plan pago único · máx. {FREE_MAX_PRODUCTS} · {FREE_MAX_IMAGES} img/prod · sin videos</span>
+            <span>Plan pago único · límites según la versión adquirida</span>
           </div>
         )} */}
       </div>
@@ -1876,7 +1870,7 @@ const ProductsView: React.FC = () => {
             />
 
             <div>
-              <p className="text-[11px] text-gray-400">+ Agregar imágenes <span className="font-medium text-gray-500">(máx. {maxImages} por producto)</span></p>
+              <p className="text-[11px] text-gray-400">+ Agregar imágenes <span className="font-medium text-gray-500">({Number.isFinite(maxImages) ? `máx. ${maxImages}` : "ilimitadas"} por producto)</span></p>
               <input ref={fileInputRef} type="file" multiple={maxImages > 1}
                 onChange={(e) => {
                   const files = e.target.files ? Array.from(e.target.files) : [];
@@ -1886,7 +1880,7 @@ const ProductsView: React.FC = () => {
 
             {maxVideos > 0 ? (
               <div>
-                <p className="text-[11px] text-gray-400">Máx {MAX_VIDEO_MB}MB · máx. {maxVideos} video(s)/producto.</p>
+                <p className="text-[11px] text-gray-400">Máx {MAX_VIDEO_MB}MB · {Number.isFinite(maxVideos) ? `máx. ${maxVideos}` : "videos ilimitados"}/producto.</p>
                 <input type="file" multiple={maxVideos > 1} accept="video/*"
                   onChange={(e) => {
                     const files = e.target.files ? Array.from(e.target.files) : [];
@@ -2198,7 +2192,7 @@ const ProductsView: React.FC = () => {
 
               <div className="border rounded p-4">
                 <div className="flex items-center justify-between">
-                  <h4 className="font-bold">Imágenes <span className="text-xs font-normal text-gray-400">({(editingProduct.images || []).length}/{maxImages})</span></h4>
+                  <h4 className="font-bold">Imágenes <span className="text-xs font-normal text-gray-400">({(editingProduct.images || []).length}/{Number.isFinite(maxImages) ? maxImages : "∞"})</span></h4>
                   {(editingProduct.images || []).length < maxImages ? (
                     <label className="text-sm text-indigo-600 cursor-pointer">+ Agregar imágenes<input type="file" multiple={maxImages > 1} className="hidden" onChange={(e) => handleAddMoreImagesToEdit(e.target.files)} /></label>
                   ) : (<span className="text-xs text-amber-600">Límite alcanzado ({maxImages}/{maxImages})</span>)}
@@ -2216,7 +2210,7 @@ const ProductsView: React.FC = () => {
 
               <div className="border rounded p-4">
                 <div className="flex items-center justify-between">
-                  <h4 className="font-bold">Videos <span className="text-xs font-normal text-gray-400">({((editingProduct as any).videos || []).length}/{maxVideos})</span></h4>
+                  <h4 className="font-bold">Videos <span className="text-xs font-normal text-gray-400">({((editingProduct as any).videos || []).length}/{Number.isFinite(maxVideos) ? maxVideos : "∞"})</span></h4>
                   {maxVideos > 0 && ((editingProduct as any).videos || []).length < maxVideos ? (
                     <label className="text-sm text-indigo-600 cursor-pointer">+ Agregar videos<input type="file" multiple={maxVideos > 1} accept="video/*" className="hidden" onChange={(e) => handleAddMoreVideosToEdit(e.target.files)} /></label>
                   ) : maxVideos === 0 ? (

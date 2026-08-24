@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
+import { getSubscriptionPlanLimits, type SubscriptionPlan } from "../helpers/subscriptionPlanLimits";
 
 type Env = Record<string, string | undefined>;
 
@@ -85,12 +86,31 @@ export async function saveProduct(
   if (storeError) return { ok: false, status: 400, error: storeError.message };
   if (!store) return { ok: false, status: 403, error: "No puedes editar esta tienda." };
 
+  const { data: subscription, error: subscriptionError } = await client
+    .from("subscriptions")
+    .select("plan")
+    .eq("store_id", storeId)
+    .maybeSingle();
+  if (subscriptionError) return { ok: false, status: 400, error: subscriptionError.message };
+
+  const limits = getSubscriptionPlanLimits((subscription?.plan ?? null) as SubscriptionPlan);
+  const images = Array.isArray(product.images) ? product.images : [];
+  const videos = Array.isArray(product.videos) ? product.videos : [];
+  if (limits.imagesPerProduct !== null && images.length > limits.imagesPerProduct) {
+    return { ok: false, status: 400, error: `Tu plan permite hasta ${limits.imagesPerProduct} imágenes por producto.` };
+  }
+  if (limits.videosPerProduct !== null && videos.length > limits.videosPerProduct) {
+    return { ok: false, status: 400, error: limits.videosPerProduct === 0
+      ? "Tu plan no permite videos por producto."
+      : `Tu plan permite hasta ${limits.videosPerProduct} video por producto.` };
+  }
+
   const { error: saveError } = await client.rpc("save_product_full", {
     p_product_id: productId,
     p_store_id: storeId,
     p_product: product,
-    p_images: product.images ?? [],
-    p_videos: product.videos ?? [],
+    p_images: images,
+    p_videos: videos,
     p_options: product.options ?? [],
     p_variants: product.variants ?? [],
   });

@@ -1,17 +1,20 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
+import { getSubscriptionPlanLimits, type SubscriptionPlan } from "@/helpers/subscriptionPlanLimits";
 
 export type SubscriptionAccess = {
   loading: boolean;
   allowed: boolean;
   status: "trial" | "active" | "past_due" | "canceled" | null;
   endAt: string | null;
-  plan: "trial" | "basic" | "pro" | "premium" | "subscription" | null;
+  plan: SubscriptionPlan;
   registrationType: "trial" | "token" | "paid" | null;
   restrictedModules: boolean;
   productLimit: number | null;
   categoryLimit: number | null;
+  imageLimit: number | null;
+  videoLimit: number | null;
   tokenIntroActive: boolean;
   error: string | null;
   refresh: () => void;
@@ -22,14 +25,14 @@ export function useSubscriptionAccess(): SubscriptionAccess {
   const [version, setVersion] = useState(0);
   const [state, setState] = useState<Omit<SubscriptionAccess, "refresh">>({
     loading: true, allowed: false, status: null, endAt: null, plan: null, registrationType: null,
-    restrictedModules: false, productLimit: null, categoryLimit: null, tokenIntroActive: false, error: null,
+    restrictedModules: false, productLimit: null, categoryLimit: null, imageLimit: null, videoLimit: null, tokenIntroActive: false, error: null,
   });
 
   useEffect(() => {
     let active = true;
     if (authLoading) return;
     if (!user) {
-      setState({ loading: false, allowed: false, status: null, endAt: null, plan: null, registrationType: null, restrictedModules: false, productLimit: null, categoryLimit: null, tokenIntroActive: false, error: null });
+      setState({ loading: false, allowed: false, status: null, endAt: null, plan: null, registrationType: null, restrictedModules: false, productLimit: null, categoryLimit: null, imageLimit: null, videoLimit: null, tokenIntroActive: false, error: null });
       return;
     }
     setState((current) => ({ ...current, loading: true, error: null }));
@@ -53,14 +56,17 @@ export function useSubscriptionAccess(): SubscriptionAccess {
         status === "trial" || (status === "active" && registrationType === "paid")
       );
       const restrictedModules = registrationType === "token";
-      const productLimit = plan === "basic" ? 30 : plan === "pro" ? 200 : null;
-      const categoryLimit = plan === "basic" ? 3 : plan === "pro" ? 6 : null;
+      const limits = getSubscriptionPlanLimits(plan);
+      const productLimit = limits.products;
+      const categoryLimit = limits.categories;
+      const imageLimit = limits.imagesPerProduct;
+      const videoLimit = limits.videosPerProduct;
       const registeredAt = data?.trial_start_at ? Date.parse(data.trial_start_at) : 0;
       const tokenIntroActive = restrictedModules && registeredAt > 0 && Date.now() < registeredAt + 7 * 24 * 60 * 60 * 1000;
-      if (active) setState({ loading: false, allowed, status, endAt, plan, registrationType, restrictedModules, productLimit, categoryLimit, tokenIntroActive, error: null });
+      if (active) setState({ loading: false, allowed, status, endAt, plan, registrationType, restrictedModules, productLimit, categoryLimit, imageLimit, videoLimit, tokenIntroActive, error: null });
     })().catch((error) => {
       console.error("Error verificando suscripcion:", error);
-      if (active) setState({ loading: false, allowed: false, status: null, endAt: null, plan: null, registrationType: null, restrictedModules: false, productLimit: null, categoryLimit: null, tokenIntroActive: false, error: error.message });
+      if (active) setState({ loading: false, allowed: false, status: null, endAt: null, plan: null, registrationType: null, restrictedModules: false, productLimit: null, categoryLimit: null, imageLimit: null, videoLimit: null, tokenIntroActive: false, error: error.message });
     });
     return () => { active = false; };
   }, [authLoading, user?.uid, version]);
