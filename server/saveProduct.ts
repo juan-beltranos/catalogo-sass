@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
-import { getSubscriptionPlanLimits, type SubscriptionPlan } from "../helpers/subscriptionPlanLimits";
+import { getSubscriptionPlanLimits, type SubscriptionPlan } from "../helpers/subscriptionPlanLimits.js";
 
 type Env = Record<string, string | undefined>;
 
