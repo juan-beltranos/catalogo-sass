@@ -44,6 +44,8 @@ export type Category = { id: string; name: string; order: number };
 
 export type CartItem = {
     productId: string;
+    kitId?: string;
+    itemType?: "product" | "kit";
     productName: string;
     variantId?: string;
     variantTitle?: string;
@@ -91,6 +93,42 @@ export type CommerceRules = {
     pricing: PricingRule[];
     shipping: ShippingRule[];
     sortProductsByNewest?: boolean;
+};
+
+export type Coupon = {
+    id: string;
+    storeId: string;
+    code: string;
+    description?: string;
+    discountType: "percent" | "amount";
+    discountValue: number;
+    minimumSubtotal: number;
+    usageLimit?: number | null;
+    usedCount: number;
+    startsAt?: string | null;
+    expiresAt?: string | null;
+    active: boolean;
+};
+
+export type ProductKitItem = {
+    productId: string;
+    quantity: number;
+    productName?: string;
+    imageUrl?: string;
+    unitPrice?: number;
+};
+
+export type ProductKit = {
+    id: string;
+    storeId: string;
+    name: string;
+    description?: string;
+    price: number;
+    compareAtPrice?: number | null;
+    imageUrl?: string | null;
+    active: boolean;
+    categoryIds?: string[];
+    items: ProductKitItem[];
 };
 
 export type CheckoutFieldType = "text" | "number" | "tel" | "email" | "textarea" | "select" | "date";

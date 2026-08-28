@@ -405,6 +405,65 @@ const SubscriptionView: React.FC = () => {
                 </p>
             </div>
 
+            <section className="overflow-hidden rounded-2xl border border-indigo-100 bg-white">
+                <div className="bg-gradient-to-br from-indigo-600 to-violet-600 px-6 py-7 text-white">
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-5">
+                        <div className="max-w-2xl">
+                            <span className="inline-flex items-center rounded-full bg-white/15 px-3 py-1 text-xs font-bold uppercase tracking-wider">
+                                <i className="fa-solid fa-crown mr-2" /> Beneficios de la mensualidad
+                            </span>
+                            <h2 className="mt-3 text-2xl font-black">
+                                {subscriptionAccess.paidModulesAllowed
+                                    ? 'Tu tienda tiene todas estas herramientas activas'
+                                    : 'Convierte tu catálogo en una herramienta de ventas completa'}
+                            </h2>
+                            <p className="mt-2 text-sm leading-6 text-indigo-100">
+                                Organiza tus ventas, conoce mejor a tus compradores y crea ofertas que ayuden a aumentar el valor de cada pedido.
+                            </p>
+                        </div>
+                        <div className="shrink-0 rounded-2xl bg-white/10 px-5 py-4 text-center backdrop-blur">
+                            <p className="text-xs font-bold uppercase tracking-wider text-indigo-100">Incluido</p>
+                            <p className="mt-1 text-lg font-black">4 módulos exclusivos</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-px bg-gray-100">
+                    {[
+                        { icon: 'fa-cart-shopping', color: 'bg-blue-50 text-blue-600', title: 'Pedidos organizados', text: 'Recibe y consulta los pedidos del catálogo en un solo lugar, con estado, productos y total.' },
+                        { icon: 'fa-users', color: 'bg-emerald-50 text-emerald-600', title: 'Historial de clientes', text: 'Identifica quién compra, cuánto ha gastado y cuándo realizó su último pedido.' },
+                        { icon: 'fa-ticket', color: 'bg-amber-50 text-amber-600', title: 'Cupones de descuento', text: 'Crea promociones con fechas, compra mínima y límites de uso para cuidar tu margen.' },
+                        { icon: 'fa-boxes-stacked', color: 'bg-violet-50 text-violet-600', title: 'Combos y kits', text: 'Agrupa varios productos, asigna categorías y ofrece un precio especial en tu catálogo.' },
+                    ].map((benefit) => (
+                        <div key={benefit.title} className="bg-white p-5 flex items-start gap-4">
+                            <div className={`h-11 w-11 shrink-0 rounded-xl grid place-items-center ${benefit.color}`}>
+                                <i className={`fa-solid ${benefit.icon}`} />
+                            </div>
+                            <div>
+                                <h3 className="font-extrabold text-gray-900">{benefit.title}</h3>
+                                <p className="mt-1 text-sm leading-5 text-gray-500">{benefit.text}</p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="px-6 py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-indigo-50/60">
+                    <div className="flex items-start gap-3 text-sm text-indigo-900">
+                        <i className={`fa-solid ${subscriptionAccess.paidModulesAllowed ? 'fa-circle-check text-emerald-600' : 'fa-lock-open text-indigo-600'} mt-0.5`} />
+                        <p className="font-semibold">
+                            {subscriptionAccess.paidModulesAllowed
+                                ? 'Tus beneficios están activos. Renueva antes del vencimiento para usarlos sin interrupciones.'
+                                : 'Activa la mensualidad y los cuatro módulos se habilitarán automáticamente.'}
+                        </p>
+                    </div>
+                    {!subscriptionAccess.paidModulesAllowed ? (
+                        <button type="button" onClick={handleOpenLocalGo} className="shrink-0 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white hover:bg-indigo-700">
+                            Activar beneficios <i className="fa-solid fa-arrow-right ml-2" />
+                        </button>
+                    ) : null}
+                </div>
+            </section>
+
             <div className="bg-white rounded-2xl border p-6">
                 <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
                     <div>

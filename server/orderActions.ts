@@ -29,11 +29,16 @@ export async function createPublicOrder(input: any, env: Env = process.env) {
     !answers.find((answer: any) => answer.id === field.id && String(answer.value || "").trim()));
   if (missingRequired) return { ok: false, status: 400, error: `Falta completar: ${missingRequired.label || "campo obligatorio"}.` };
 
-  const productIds = [...new Set(order.items.map((item: any) => String(item.productId || "")).filter(Boolean))] as string[];
+  const productIds = [...new Set(order.items.filter((item: any) => item.itemType !== "kit").map((item: any) => String(item.productId || "")).filter(Boolean))] as string[];
+  const kitIds = [...new Set(order.items.filter((item: any) => item.itemType === "kit").map((item: any) => String(item.kitId || item.productId || "")).filter(Boolean))] as string[];
+  if (kitIds.length) {
+    const { data: paidAccess, error: paidAccessError } = await admin.rpc("has_paid_monthly_access", { p_store_id: storeId });
+    if (paidAccessError || paidAccess !== true) return { ok: false, status: 400, error: "Los kits no están disponibles en este momento." };
+  }
   const variantIds = [...new Set(order.items.map((item: any) => String(item.variantId || "")).filter(Boolean))] as string[];
-  const { data: productRows, error: productsError } = await admin.from("products")
-    .select("id,base_price,wholesale_price,discount_type,discount_value,is_active,allow_cash_on_delivery")
-    .eq("store_id", storeId).in("id", productIds);
+  const { data: productRows, error: productsError } = productIds.length
+    ? await admin.from("products").select("id,base_price,wholesale_price,discount_type,discount_value,is_active,allow_cash_on_delivery").eq("store_id", storeId).in("id", productIds)
+    : { data: [], error: null };
   if (productsError) return { ok: false, status: 400, error: productsError.message };
   const { data: variantRows, error: variantsError } = variantIds.length
     ? await admin.from("product_variants").select("id,product_id,price").in("id", variantIds)
@@ -41,9 +46,21 @@ export async function createPublicOrder(input: any, env: Env = process.env) {
   if (variantsError) return { ok: false, status: 400, error: variantsError.message };
   const productsById = new Map((productRows || []).map((row: any) => [row.id, row]));
   const variantsById = new Map((variantRows || []).map((row: any) => [row.id, row]));
+  const { data: kitRows, error: kitsError } = kitIds.length
+    ? await admin.from("product_kits").select("id,name,price,active").eq("store_id", storeId).in("id", kitIds)
+    : { data: [], error: null };
+  if (kitsError) return { ok: false, status: 400, error: kitsError.message };
+  const kitsById = new Map((kitRows || []).map((row: any) => [row.id, row]));
   let canonicalItems: any[];
   try {
     canonicalItems = order.items.map((item: any) => {
+    if (item.itemType === "kit") {
+      const kit: any = kitsById.get(String(item.kitId || item.productId || ""));
+      if (!kit || kit.active === false) throw new Error(`Kit no disponible: ${item.productName || "kit"}`);
+      const qty = Math.max(1, Math.floor(Number(item.qty) || 1));
+      const unitPrice = Math.max(0, Math.round(Number(kit.price || 0)));
+      return { ...item, productId: kit.id, kitId: kit.id, productName: kit.name, qty, unitPrice, subtotal: unitPrice * qty };
+    }
     const product: any = productsById.get(String(item.productId || ""));
     if (!product || product.is_active === false) throw new Error(`Producto no disponible: ${item.productName || "producto"}`);
     const variant: any = item.variantId ? variantsById.get(String(item.variantId)) : null;
@@ -87,13 +104,24 @@ export async function createPublicOrder(input: any, env: Env = process.env) {
     : method === "local" ? Number(shipping.costLocal ?? shipping.costCarrier ?? 0)
     : Number(shipping.costNational || 0);
   const calculated = evaluateCommerceRules({ quantity, subtotal: originalSubtotal, shippingMethod: method, baseShippingCost }, store.commerce_rules);
+  let appliedCoupon: any = null;
+  if (String(order.couponCode || "").trim()) {
+    const { data: couponData, error: couponError } = await admin.rpc("validate_catalog_coupon", {
+      p_store_id: storeId,
+      p_code: String(order.couponCode).trim(),
+      p_subtotal: calculated.subtotal,
+    });
+    if (couponError || !couponData?.valid) return { ok: false, status: 400, error: couponError?.message || couponData?.message || "Cupón no válido." };
+    appliedCoupon = couponData;
+  }
+  const couponDiscount = Math.min(calculated.subtotal, Number(appliedCoupon?.discount || 0));
   order.originalSubtotal = calculated.originalSubtotal;
-  order.discount = calculated.discount;
-  order.subtotal = calculated.subtotal;
+  order.discount = calculated.discount + couponDiscount;
+  order.subtotal = calculated.subtotal - couponDiscount;
   order.shippingCost = calculated.shippingCost;
   order.shippingMethod = method;
-  order.total = calculated.total;
-  order.appliedRules = calculated.appliedRules;
+  order.total = calculated.total - couponDiscount;
+  order.appliedRules = [...calculated.appliedRules, ...(appliedCoupon ? [{ id: appliedCoupon.couponId, name: `Cupón ${appliedCoupon.code}`, amount: couponDiscount, kind: "pricing" }] : [])];
 
   const { data: existingOrder } = await admin.from("orders").select("id").eq("id", order.id).maybeSingle();
   if (existingOrder) return { ok: true, status: 200, orderId: order.id };
@@ -169,7 +197,7 @@ export async function createPublicOrder(input: any, env: Env = process.env) {
   }
 
   const itemRows = order.items.map((item: any) => ({
-    order_id: order.id, store_id: storeId, product_id: item.productId || null,
+    order_id: order.id, store_id: storeId, product_id: item.itemType === "kit" ? null : item.productId || null, kit_id: item.itemType === "kit" ? item.kitId : null,
     variant_id: item.variantId || null, title: item.productName || "", sku: item.sku || null,
     quantity: Number(item.qty || 1), unit_price: Number(item.unitPrice || 0), total: Number(item.subtotal || 0),
   }));
@@ -185,6 +213,10 @@ export async function createPublicOrder(input: any, env: Env = process.env) {
     label: field.label || "", value: String(field.value),
   }));
   if (fields.length) await admin.from("order_custom_fields").insert(fields);
+  if (appliedCoupon?.couponId) {
+    const { data: coupon } = await admin.from("coupons").select("used_count").eq("id", appliedCoupon.couponId).maybeSingle();
+    if (coupon) await admin.from("coupons").update({ used_count: Number(coupon.used_count || 0) + 1, updated_at: new Date().toISOString() }).eq("id", appliedCoupon.couponId);
+  }
   return { ok: true, status: 200, orderId: order.id, calculation: {
     originalSubtotal: order.originalSubtotal, discount: order.discount, subtotal: order.subtotal,
     shippingCost: order.shippingCost, total: order.total, appliedRules: order.appliedRules,

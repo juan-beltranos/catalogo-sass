@@ -24,7 +24,7 @@ import {
 } from "@/lib/supabaseFirestore";
 import { db, publicSupabase } from "@/lib/supabase";
 import { Product, Store } from "@/interfaces";
-import { CartItem, Category, Variant } from "@/types";
+import { CartItem, Category, Variant, ProductKit } from "@/types";
 import {
   buildWaLink,
   calcTotal,
@@ -376,6 +376,9 @@ const CatalogView: React.FC = () => {
   const [catalogUnavailableReason, setCatalogUnavailableReason] =
     useState<CatalogUnavailableReason | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
+  const [kits, setKits] = useState<ProductKit[]>([]);
+  const [paidFeaturesAvailable, setPaidFeaturesAvailable] = useState(false);
+  const kitCarouselRef = useRef<HTMLDivElement>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [productsLoading, setProductsLoading] = useState(false);
@@ -386,6 +389,10 @@ const CatalogView: React.FC = () => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [placingOrder, setPlacingOrder] = useState(false);
+  const [couponCode, setCouponCode] = useState("");
+  const [couponResult, setCouponResult] = useState<{ code: string; discount: number } | null>(null);
+  const [couponMessage, setCouponMessage] = useState("");
+  const [couponBusy, setCouponBusy] = useState(false);
 
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -467,6 +474,7 @@ const CatalogView: React.FC = () => {
     if (!checkoutOpen || !store?.id || !cart.length) return;
     let cancelled = false;
     Promise.all(cart.map(async (item) => {
+      if (item.itemType === "kit") return true;
       const snapshot = await getDoc(doc(db, "stores", store.id, "products", item.productId));
       return snapshot.exists()
         ? (snapshot.data() as Product).allowsCashOnDelivery !== false
@@ -524,7 +532,21 @@ const CatalogView: React.FC = () => {
   const subtotal = ruleSummary.subtotal;
   const discount = ruleSummary.discount;
   const shippingCost = ruleSummary.shippingCost;
-  const total = ruleSummary.total;
+  const couponDiscount = Math.min(ruleSummary.subtotal, Number(couponResult?.discount || 0));
+  const total = Math.max(0, ruleSummary.total - couponDiscount);
+
+  useEffect(() => { setCouponResult(null); setCouponMessage(""); }, [originalSubtotal]);
+
+  const applyCoupon = async () => {
+    if (!store?.id || !paidFeaturesAvailable || !couponCode.trim()) return;
+    setCouponBusy(true); setCouponMessage("");
+    const { data, error } = await publicSupabase.rpc("validate_catalog_coupon", {
+      p_store_id: store.id, p_code: couponCode.trim(), p_subtotal: ruleSummary.subtotal,
+    });
+    setCouponBusy(false);
+    if (error || !data?.valid) { setCouponResult(null); setCouponMessage(error?.message || data?.message || "Cupón no válido."); return; }
+    setCouponResult({ code: data.code, discount: Number(data.discount || 0) }); setCouponCode(data.code); setCouponMessage("¡Cupón aplicado!");
+  };
 
   const categoryNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -677,6 +699,40 @@ const CatalogView: React.FC = () => {
     });
     return () => unsubscribeCats();
   }, [store, catalogUnavailableReason]);
+
+  useEffect(() => {
+    if (!store?.id || catalogUnavailableReason) { setPaidFeaturesAvailable(false); return; }
+    let cancelled = false;
+    setPaidFeaturesAvailable(false);
+    publicSupabase.rpc("has_paid_monthly_access", { p_store_id: store.id })
+      .then(({ data, error }) => {
+        if (!cancelled) setPaidFeaturesAvailable(!error && data === true);
+      });
+    return () => { cancelled = true; };
+  }, [store?.id, catalogUnavailableReason]);
+
+  useEffect(() => {
+    if (!store || catalogUnavailableReason || isWholesaleCatalog || !paidFeaturesAvailable) { setKits([]); return; }
+    let cancelled = false;
+    publicSupabase.from("product_kits")
+      .select("*,product_kit_items(product_id,quantity,sort_order,products(name,base_price,product_images(url,sort_order)))")
+      .eq("store_id", store.id).eq("active", true).order("created_at", { ascending: false })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { console.warn("No se pudieron cargar los kits:", error); setKits([]); return; }
+        setKits((data || []).map((row: any) => ({
+          id: row.id, storeId: row.store_id, name: row.name, description: row.description,
+          price: Number(row.price), compareAtPrice: row.compare_at_price == null ? null : Number(row.compare_at_price),
+          imageUrl: row.image_url, active: row.active, categoryIds: row.category_ids || [],
+          items: [...(row.product_kit_items || [])].sort((a: any, b: any) => a.sort_order - b.sort_order).map((item: any) => ({
+            productId: item.product_id, quantity: Number(item.quantity), productName: item.products?.name,
+            unitPrice: Number(item.products?.base_price || 0),
+            imageUrl: [...(item.products?.product_images || [])].sort((a: any, b: any) => a.sort_order - b.sort_order)[0]?.url,
+          })),
+        })));
+      });
+    return () => { cancelled = true; };
+  }, [store?.id, catalogUnavailableReason, isWholesaleCatalog, paidFeaturesAvailable]);
 
   useEffect(() => {
     if (!categories.length) return;
@@ -913,6 +969,7 @@ const CatalogView: React.FC = () => {
   }, [store?.id, catalogUnavailableReason, activeCategoryId, fetchFirstPage]);
 
   const getCartItemMaxStock = (item: CartItem) => {
+    if (item.itemType === "kit") return undefined;
     const prod = [...products, ...searchProducts].find((p) => p.id === item.productId);
     const v = prod?.variants?.find((vv) => vv.id === item.variantId);
     return v && typeof v.stock === "number" && v.stock > 0 ? v.stock : undefined;
@@ -960,6 +1017,23 @@ const CatalogView: React.FC = () => {
       }
       return [...prev, item];
     });
+  };
+
+  const addKitToCart = (kit: ProductKit) => {
+    const item: CartItem = { productId: kit.id, kitId: kit.id, itemType: "kit", productName: kit.name,
+      unitPrice: kit.price, originalUnitPrice: kit.compareAtPrice || undefined, qty: 1,
+      imageUrl: kit.imageUrl || kit.items[0]?.imageUrl, allowsCashOnDelivery: true };
+    setCart((current) => {
+      const index = current.findIndex((entry) => entry.itemType === "kit" && entry.kitId === kit.id);
+      if (index < 0) return [...current, item];
+      const next = [...current]; next[index] = { ...next[index], qty: next[index].qty + 1 }; return next;
+    });
+  };
+
+  const moveKitCarousel = (direction: -1 | 1) => {
+    const carousel = kitCarouselRef.current;
+    if (!carousel) return;
+    carousel.scrollBy({ left: direction * Math.max(280, carousel.clientWidth * 0.9), behavior: "smooth" });
   };
 
   const changeQty = (index: number, delta: number) => {
@@ -1032,6 +1106,11 @@ const CatalogView: React.FC = () => {
     setPlacingOrder(true);
     try {
       const resolveCartProduct = async (item: CartItem) => {
+        if (item.itemType === "kit" && item.kitId) {
+          const { data, error } = await publicSupabase.from("product_kits").select("id,name,price,active").eq("id", item.kitId).eq("store_id", store.id).eq("active", true).maybeSingle();
+          if (error || !data) return null;
+          return { item: { ...item, productId: data.id, kitId: data.id, unitPrice: Number(data.price), productName: data.name }, ref: null, data: { isKit: true } };
+        }
         const productRef = doc(publicSupabase, "stores", store.id, "products", item.productId);
         const snap = await getDoc(productRef);
         if (snap.exists()) return { item, ref: productRef, data: snap.data() };
@@ -1069,6 +1148,8 @@ const CatalogView: React.FC = () => {
       const resolvedCartItems = resolvedProducts.map((entry) => entry!.item);
       const items = resolvedCartItems.map((it) => ({
         productId: it.productId,
+        kitId: it.kitId ?? null,
+        itemType: it.itemType ?? "product",
         productName: it.productName,
         sku: it.sku ?? null,
         variantId: it.variantId ?? null,
@@ -1173,6 +1254,7 @@ const CatalogView: React.FC = () => {
         customerType: isWholesaleCatalog ? "wholesale" : "retail",
         items,
         originalSubtotal,
+        couponCode: couponResult?.code || null,
         discount,
         subtotal,
         shippingMethod: selectedShipping ?? null,
@@ -1587,6 +1669,32 @@ const CatalogView: React.FC = () => {
           <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-sm text-red-700">
             {queryError}
           </div>
+        ) : null}
+
+        {!isSearching && kits.filter(kit => activeCategoryId === "all" || kit.categoryIds?.includes(activeCategoryId)).length > 0 ? (
+          <section className="space-y-3" aria-labelledby="catalog-kits-title">
+            <div className="flex items-end justify-between gap-4">
+              <div><p className="text-xs font-extrabold uppercase tracking-widest" style={{ color: brandColor }}>Ahorra comprando juntos</p><h2 id="catalog-kits-title" className="text-xl sm:text-2xl font-black text-gray-900 mt-1">Combos y kits</h2></div>
+              <div className="flex items-center gap-2"><span className="hidden sm:inline text-xs font-bold text-gray-400 mr-1">{kits.filter(kit => activeCategoryId === "all" || kit.categoryIds?.includes(activeCategoryId)).length} opciones</span><button type="button" onClick={()=>moveKitCarousel(-1)} className="h-10 w-10 rounded-full border bg-white shadow-sm hover:bg-gray-50 active:scale-95" aria-label="Ver kits anteriores"><i className="fa-solid fa-chevron-left"/></button><button type="button" onClick={()=>moveKitCarousel(1)} className="h-10 w-10 rounded-full border bg-white shadow-sm hover:bg-gray-50 active:scale-95" aria-label="Ver más kits"><i className="fa-solid fa-chevron-right"/></button></div>
+            </div>
+            <div ref={kitCarouselRef} className="flex gap-4 overflow-x-auto snap-x snap-mandatory scroll-smooth pb-2 no-scrollbar" style={{scrollbarWidth:"none"}}>
+              {kits.filter(kit => activeCategoryId === "all" || kit.categoryIds?.includes(activeCategoryId)).map((kit) => {
+                const saving = Math.max(0, Number(kit.compareAtPrice || 0) - kit.price);
+                const picturedItems = kit.items.filter(item => item.imageUrl);
+                const columns = picturedItems.length <= 1 ? 1 : picturedItems.length <= 4 ? 2 : 3;
+                return <article key={kit.id} className="snap-start shrink-0 w-[88%] sm:w-[calc(50%-0.5rem)] bg-white rounded-2xl border border-indigo-100 shadow-sm overflow-hidden flex flex-col sm:flex-row">
+                  <div className="h-48 sm:h-auto sm:w-44 shrink-0 bg-gray-50 p-2">
+                    {picturedItems.length ? <div className="grid h-full w-full gap-1.5" style={{gridTemplateColumns:`repeat(${columns}, minmax(0, 1fr))`}}>{picturedItems.map((item,index)=><div key={`${item.productId}-${index}`} className="relative min-h-0 rounded-lg bg-white border border-gray-100 overflow-hidden"><img src={item.imageUrl} alt={item.productName || `Producto ${index+1} del kit`} className="h-full w-full object-contain p-1" loading="lazy"/>{item.quantity>1&&<span className="absolute bottom-1 right-1 min-w-5 h-5 px-1 rounded-full bg-gray-900/80 text-white text-[10px] font-black grid place-items-center">×{item.quantity}</span>}</div>)}</div> : <div className="h-full grid place-items-center"><i className="fa-solid fa-boxes-stacked text-3xl text-indigo-200"/></div>}
+                  </div>
+                  <div className="p-4 min-w-0 flex-1 flex flex-col"><div className="flex items-start justify-between gap-2"><h3 className="font-black text-gray-900 leading-tight">{kit.name}</h3>{saving > 0 && <span className="shrink-0 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-black px-2 py-1">AHORRA {formatCOP(saving)}</span>}</div>
+                    <p className="text-xs text-gray-500 mt-2 line-clamp-2">{kit.description || kit.items.map(item => `${item.quantity}× ${item.productName}`).join(" · ")}</p>
+                    <div className="flex items-end justify-between gap-3 mt-auto pt-4"><div>{kit.compareAtPrice && kit.compareAtPrice > kit.price ? <div className="text-xs text-gray-400 line-through font-bold">{formatCOP(kit.compareAtPrice)}</div> : null}<div className="text-lg font-black" style={{color:brandColor}}>{formatCOP(kit.price)}</div></div><button type="button" onClick={()=>addKitToCart(kit)} className="rounded-xl px-4 py-2.5 text-white text-sm font-extrabold hover:opacity-90 active:scale-95" style={{background:brandColor}}><i className="fa-solid fa-cart-plus mr-2"/>Agregar</button></div>
+                  </div>
+                </article>;
+              })}
+            </div>
+            <p className="sm:hidden text-center text-[11px] font-bold text-gray-400"><i className="fa-solid fa-hand-pointer mr-1"/>Desliza para ver más kits</p>
+          </section>
         ) : null}
 
         {productsLoading ? (
@@ -2008,7 +2116,7 @@ const CatalogView: React.FC = () => {
                 ) : (
                   cart.map((it, idx) => (
                     <div
-                      key={`${it.productId}:${it.variantId || "base"}`}
+                      key={`${it.itemType || "product"}:${it.kitId || it.productId}:${it.variantId || "base"}`}
                       className="flex gap-3 border border-gray-100 rounded-2xl p-3 shadow-sm"
                     >
                       <div className="w-16 h-16 rounded-2xl bg-gray-100 overflow-hidden border relative">
@@ -2169,7 +2277,8 @@ const CatalogView: React.FC = () => {
                     <span>Subtotal</span>
                     <span className="font-bold">{formatCOP(originalSubtotal)}</span>
                   </div>
-                  {discount > 0 ? <div className="flex items-center justify-between text-sm text-green-600"><span>Promocion aplicada</span><span className="font-bold">-{formatCOP(discount)}</span></div> : null}
+                  {discount > 0 ? <div className="flex items-center justify-between text-sm text-green-600"><span>Promoción aplicada</span><span className="font-bold">-{formatCOP(discount)}</span></div> : null}
+                  {couponDiscount > 0 ? <div className="flex items-center justify-between text-sm text-green-600"><span>Cupón {couponResult?.code}</span><span className="font-bold">-{formatCOP(couponDiscount)}</span></div> : null}
                   {shippingConfig.enabled && selectedShipping && !shippingConfig.hidePrices ? (
                     <div className="flex items-center justify-between text-sm text-gray-500">
                       <span>Envío ({SHIPPING_LABELS[selectedShipping].label})</span>
@@ -2188,6 +2297,12 @@ const CatalogView: React.FC = () => {
                   </div>
                 </div>
               )}
+
+              {paidFeaturesAvailable ? <div className="rounded-2xl border border-dashed border-indigo-200 bg-indigo-50/50 p-4">
+                <label className="text-sm font-extrabold text-gray-900"><i className="fa-solid fa-ticket mr-2 text-indigo-500" />¿Tienes un cupón?</label>
+                <div className="flex gap-2 mt-2"><input value={couponCode} onChange={e=>setCouponCode(e.target.value.toUpperCase())} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();applyCoupon();}}} className="min-w-0 flex-1 border rounded-xl px-3 py-2 uppercase font-bold" placeholder="ESCRIBE TU CÓDIGO"/><button type="button" onClick={applyCoupon} disabled={couponBusy||!couponCode.trim()} className="rounded-xl px-4 py-2 bg-indigo-600 text-white font-bold disabled:opacity-50">{couponBusy?"Validando...":"Aplicar"}</button></div>
+                {couponMessage && <p className={`text-xs mt-2 font-bold ${couponResult?"text-emerald-600":"text-red-600"}`}>{couponMessage}</p>}
+              </div> : null}
 
               {/* Datos del cliente */}
               <div className="space-y-3">

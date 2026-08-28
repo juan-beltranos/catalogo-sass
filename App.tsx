@@ -17,10 +17,11 @@ import RegisterView from './views/admin/RegisterView';
 import SettingsView from './views/admin/SettingsView';
 import StoresView from './views/superadmin/StoresView';
 import SuperAdminRoute from './components/auth/SuperAdminRoute';
-import SubscriptionRoute from './components/auth/SubscriptionRoute';
 import SubscriptionRequiredView from './views/admin/SubscriptionRequiredView';
-import ModuleRoute from './components/auth/ModuleRoute';
 import SubscriptionOptionRoute from './components/auth/SubscriptionOptionRoute';
+import PaidModuleRoute from './components/auth/PaidModuleRoute';
+import CouponsView from './views/admin/CouponsView';
+import KitsView from './views/admin/KitsView';
 
 const App: React.FC = () => {
   return (
@@ -49,11 +50,11 @@ const App: React.FC = () => {
               <Route path="products" element={<ProductsView />} />
               <Route path="categories" element={<CategoriesView />} />
               <Route path="settings" element={<SettingsView />} />
-              <Route element={<SubscriptionRoute />}>
-                <Route element={<ModuleRoute />}>
-                  <Route path="orders" element={<OrdersView />} />
-                  <Route path="customers" element={<CustomersView />} />
-                </Route>
+              <Route element={<PaidModuleRoute />}>
+                <Route path="orders" element={<OrdersView />} />
+                <Route path="customers" element={<CustomersView />} />
+                <Route path="coupons" element={<CouponsView />} />
+                <Route path="kits" element={<KitsView />} />
               </Route>
             </Route>
           </Route>

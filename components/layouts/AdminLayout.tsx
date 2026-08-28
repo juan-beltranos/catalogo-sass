@@ -239,6 +239,8 @@ const AdminLayout: React.FC = () => {
       '/admin/products',
       '/admin/categories',
       '/admin/settings',
+      '/admin/coupons',
+      '/admin/kits',
     ];
     const isAlwaysAvailablePage = alwaysAvailablePages.some(
       (path) => location.pathname === path || (path !== '/admin' && location.pathname.startsWith(`${path}/`)),
@@ -355,6 +357,7 @@ const AdminLayout: React.FC = () => {
             hideSubscription={hideSubscriptionModule}
             restrictedModules={subscriptionAccess.restrictedModules}
             tokenIntroActive={subscriptionAccess.tokenIntroActive}
+            paidModulesAllowed={subscriptionAccess.paidModulesAllowed}
           />
         </aside>
 
@@ -399,6 +402,7 @@ const AdminLayout: React.FC = () => {
               hideSubscription={hideSubscriptionModule}
               restrictedModules={subscriptionAccess.restrictedModules}
               tokenIntroActive={subscriptionAccess.tokenIntroActive}
+              paidModulesAllowed={subscriptionAccess.paidModulesAllowed}
             />
           </div>
         </div>

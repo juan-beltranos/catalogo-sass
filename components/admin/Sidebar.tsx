@@ -15,6 +15,7 @@ type SidebarCustomProps = SidebarProps & {
   hideSubscription?: boolean;
   restrictedModules?: boolean;
   tokenIntroActive?: boolean;
+  paidModulesAllowed?: boolean;
 };
 
 const SidebarItem: React.FC<SidebarItemProps & { disabled?: boolean }> = ({
@@ -59,6 +60,7 @@ const Sidebar: React.FC<SidebarCustomProps> = ({
   hideSubscription = false,
   restrictedModules = false,
   tokenIntroActive = false,
+  paidModulesAllowed = false,
 }) => {
   const location = useLocation();
 
@@ -88,13 +90,19 @@ const Sidebar: React.FC<SidebarCustomProps> = ({
       to: '/admin/orders',
       icon: 'fa-cart-shopping',
       label: 'Pedidos',
-      disabled: !canUseAdmin || restrictedModules,
+      disabled: !paidModulesAllowed,
     },
     {
       to: '/admin/customers',
       icon: 'fa-users',
       label: 'Clientes',
-      disabled: !canUseAdmin || restrictedModules,
+      disabled: !paidModulesAllowed,
+    },
+    {
+      to: '/admin/coupons', icon: 'fa-ticket', label: 'Cupones', disabled: !paidModulesAllowed,
+    },
+    {
+      to: '/admin/kits', icon: 'fa-boxes-stacked', label: 'Kits de productos', disabled: !paidModulesAllowed,
     },
     {
       to: '/admin/settings',
@@ -105,11 +113,17 @@ const Sidebar: React.FC<SidebarCustomProps> = ({
   ];
 
   const visibleMenuItems = tokenIntroActive
-    ? menuItems.filter((item) => item.to !== '/admin/orders' && item.to !== '/admin/customers')
+    ? menuItems.filter((item) => ![
+        '/admin/orders',
+        '/admin/customers',
+        '/admin/coupons',
+        '/admin/kits',
+      ].includes(item.to))
     : menuItems;
 
   if (!hideSubscription && !tokenIntroActive) {
-    visibleMenuItems.splice(5, 0, {
+    const settingsIndex = visibleMenuItems.findIndex((item) => item.to === '/admin/settings');
+    visibleMenuItems.splice(settingsIndex >= 0 ? settingsIndex : visibleMenuItems.length, 0, {
       to: '/admin/subscription',
       icon: 'fa-credit-card',
       label: 'Suscripción',

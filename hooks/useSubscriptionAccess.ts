@@ -16,6 +16,7 @@ export type SubscriptionAccess = {
   imageLimit: number | null;
   videoLimit: number | null;
   tokenIntroActive: boolean;
+  paidModulesAllowed: boolean;
   error: string | null;
   refresh: () => void;
 };
@@ -25,14 +26,14 @@ export function useSubscriptionAccess(): SubscriptionAccess {
   const [version, setVersion] = useState(0);
   const [state, setState] = useState<Omit<SubscriptionAccess, "refresh">>({
     loading: true, allowed: false, status: null, endAt: null, plan: null, registrationType: null,
-    restrictedModules: false, productLimit: null, categoryLimit: null, imageLimit: null, videoLimit: null, tokenIntroActive: false, error: null,
+    restrictedModules: false, productLimit: null, categoryLimit: null, imageLimit: null, videoLimit: null, tokenIntroActive: false, paidModulesAllowed: false, error: null,
   });
 
   useEffect(() => {
     let active = true;
     if (authLoading) return;
     if (!user) {
-      setState({ loading: false, allowed: false, status: null, endAt: null, plan: null, registrationType: null, restrictedModules: false, productLimit: null, categoryLimit: null, imageLimit: null, videoLimit: null, tokenIntroActive: false, error: null });
+      setState({ loading: false, allowed: false, status: null, endAt: null, plan: null, registrationType: null, restrictedModules: false, productLimit: null, categoryLimit: null, imageLimit: null, videoLimit: null, tokenIntroActive: false, paidModulesAllowed: false, error: null });
       return;
     }
     setState((current) => ({ ...current, loading: true, error: null }));
@@ -56,17 +57,20 @@ export function useSubscriptionAccess(): SubscriptionAccess {
         status === "trial" || (status === "active" && registrationType === "paid")
       );
       const restrictedModules = registrationType === "token";
+      const paidModulesAllowed = hasTime && status === "active" && registrationType === "paid";
       const limits = getSubscriptionPlanLimits(plan);
       const productLimit = limits.products;
       const categoryLimit = limits.categories;
       const imageLimit = limits.imagesPerProduct;
       const videoLimit = limits.videosPerProduct;
       const registeredAt = data?.trial_start_at ? Date.parse(data.trial_start_at) : 0;
-      const tokenIntroActive = restrictedModules && registeredAt > 0 && Date.now() < registeredAt + 7 * 24 * 60 * 60 * 1000;
-      if (active) setState({ loading: false, allowed, status, endAt, plan, registrationType, restrictedModules, productLimit, categoryLimit, imageLimit, videoLimit, tokenIntroActive, error: null });
+      // Durante los primeros 7 días dejamos visible únicamente la experiencia
+      // base. Si paga antes, los módulos mensuales aparecen inmediatamente.
+      const tokenIntroActive = !paidModulesAllowed && registeredAt > 0 && Date.now() < registeredAt + 7 * 24 * 60 * 60 * 1000;
+      if (active) setState({ loading: false, allowed, status, endAt, plan, registrationType, restrictedModules, productLimit, categoryLimit, imageLimit, videoLimit, tokenIntroActive, paidModulesAllowed, error: null });
     })().catch((error) => {
       console.error("Error verificando suscripcion:", error);
-      if (active) setState({ loading: false, allowed: false, status: null, endAt: null, plan: null, registrationType: null, restrictedModules: false, productLimit: null, categoryLimit: null, imageLimit: null, videoLimit: null, tokenIntroActive: false, error: error.message });
+      if (active) setState({ loading: false, allowed: false, status: null, endAt: null, plan: null, registrationType: null, restrictedModules: false, productLimit: null, categoryLimit: null, imageLimit: null, videoLimit: null, tokenIntroActive: false, paidModulesAllowed: false, error: error.message });
     });
     return () => { active = false; };
   }, [authLoading, user?.uid, version]);
