@@ -37,6 +37,8 @@ export interface Store {
   createdAt?: string;
   logoUrl?: string;
   logoPath?: string;
+  bannerUrl?: string;
+  bannerPath?: string;
   checkoutFields?: CheckoutFieldConfig[];
   commerceRules?: CommerceRules;
 }

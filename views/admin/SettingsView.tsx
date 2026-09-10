@@ -59,6 +59,30 @@ const normalizeCheckoutFields = (fields: any[]): CheckoutFieldConfig[] => {
     return normalizeCheckoutFormFields(fields) as CheckoutFieldConfig[];
 };
 
+const extensionFromFile = (file: File) => {
+    if (file.type.includes("webp")) return "webp";
+    if (file.type.includes("png")) return "png";
+    if (file.type.includes("jpeg") || file.type.includes("jpg")) return "jpg";
+    return file.name.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+};
+
+const buildStoreMediaPath = (storeId: string, folder: "logo" | "banner", file: File) => {
+    const baseName = slugify(file.name.replace(/\.[^.]+$/, "")) || folder;
+    return `stores/${storeId}/${folder}/${Date.now()}_${baseName}.${extensionFromFile(file)}`;
+};
+
+const pathFromStoredMedia = (storeId: string, path?: string, url?: string) => {
+    const normalizedPath = String(path || "").replace(/^\/+/, "");
+    if (normalizedPath.startsWith(`stores/${storeId}/`)) return normalizedPath;
+
+    try {
+        const pathname = new URL(String(url || "")).pathname.replace(/^\/+/, "");
+        return pathname.startsWith(`stores/${storeId}/`) ? pathname : "";
+    } catch {
+        return "";
+    }
+};
+
 const SettingsView: React.FC = () => {
     const { user } = useAuth();
 
@@ -125,6 +149,8 @@ const SettingsView: React.FC = () => {
                 createdAt: data.createdAt,
                 logoUrl: data.logoUrl ?? "",
                 logoPath: data.logoPath ?? "",
+                bannerUrl: data.bannerUrl ?? "",
+                bannerPath: data.bannerPath ?? "",
             };
 
             setLogoPreview(s.logoUrl || "");
@@ -170,14 +196,15 @@ const SettingsView: React.FC = () => {
         setLogoUploading(true);
         try {
             const optimized = await compressImageFile(logoFile, { maxSizeMB: 0.35, maxWidthOrHeight: 800 });
-            const path = `stores/${store.id}/logo/${Date.now()}_${optimized.name}`;
+            const path = buildStoreMediaPath(store.id, "logo", optimized);
             const storageRef = ref(storage, path);
             const uploaded = await uploadBytes(storageRef, optimized);
             const url = await getDownloadURL(storageRef, uploaded.url);
 
-            if (store.logoPath) {
+            const currentLogoPath = pathFromStoredMedia(store.id, store.logoPath, store.logoUrl);
+            if (currentLogoPath) {
                 try {
-                    await deleteObject(ref(storage, store.logoPath));
+                    await deleteObject(ref(storage, currentLogoPath));
                 } catch (e) {
                     console.warn("No se pudo borrar logo anterior:", e);
                 }
@@ -195,13 +222,13 @@ const SettingsView: React.FC = () => {
         setBannerUploading(true);
         try {
             const optimized = await compressImageFile(bannerFile, { maxSizeMB: 0.7, maxWidthOrHeight: 1600 });
-            const path = `stores/${store.id}/banner/${Date.now()}_${optimized.name}`;
+            const path = buildStoreMediaPath(store.id, "banner", optimized);
             const storageRef = ref(storage, path);
             const uploaded = await uploadBytes(storageRef, optimized);
             const url = await getDownloadURL(storageRef, uploaded.url);
 
             // borrar banner anterior si existe
-            const currentBannerPath = (store as any).bannerPath;
+            const currentBannerPath = pathFromStoredMedia(store.id, (store as any).bannerPath, (store as any).bannerUrl);
             if (currentBannerPath) {
                 try {
                     await deleteObject(ref(storage, currentBannerPath));
