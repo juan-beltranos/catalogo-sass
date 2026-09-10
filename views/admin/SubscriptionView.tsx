@@ -38,7 +38,7 @@ type StoreInfo = {
     trialEndsAtMs?: number | null;
 };
 
-const LOCAL_GO_PAYMENT_URL = import.meta.env.VITE_LOCAL_GO_PAYMENT_URL || '';
+const LOCAL_GO_PAYMENT_URL ="https://checkout.dlocalgo.com/validate/subscription/01cKDqAlgAwkSEeVuD373Kvh6UdYl2Ip";
 
 const parseDate = (
     value?: string | number | Date | FirestoreTimestampLike | null

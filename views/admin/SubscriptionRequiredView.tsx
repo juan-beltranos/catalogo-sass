@@ -3,7 +3,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useSubscriptionAccess } from "@/hooks/useSubscriptionAccess";
 import { Link } from "react-router-dom";
 
-const PAYMENT_URL = import.meta.env.VITE_LOCAL_GO_PAYMENT_URL || "";
+const PAYMENT_URL = "https://checkout.dlocalgo.com/validate/subscription/01cKDqAlgAwkSEeVuD373Kvh6UdYl2Ip";
 
 const SubscriptionRequiredView: React.FC = () => {
   const { user } = useAuth();
