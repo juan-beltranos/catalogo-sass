@@ -743,7 +743,10 @@ const ProductsView: React.FC = () => {
 
       // Convierte encabezados con distintas mayúsculas, acentos, espacios o
       // nombres externos al formato canónico usado por el importador.
-      const rows = rawRows.map(normalizeExcelRow);
+      const rows = rawRows.map((rawRow, index) => ({
+        ...normalizeExcelRow(rawRow),
+        __excelRowNumber: index + 2,
+      }));
 
       if (!rows.length) {
         alert("El Excel no tiene productos para importar.");
@@ -802,11 +805,22 @@ const ProductsView: React.FC = () => {
       let updated = 0;
       let skipped = 0;
       let createdCategories = 0;
+      const skippedDetails: Array<{ rowNumber: number; fields: string[] }> = [];
+      const skippedFieldCounts = new Map<string, number>();
+
+      const registerSkippedRow = (rowNumber: number, fields: string[]) => {
+        skipped++;
+        skippedDetails.push({ rowNumber, fields });
+        fields.forEach((field) => {
+          skippedFieldCounts.set(field, (skippedFieldCounts.get(field) ?? 0) + 1);
+        });
+      };
 
       const importedProductIds = new Set<string>();
       let importOrderCounter = 0;
 
       for (const row of rows) {
+        const rowNumber = Number(row.__excelRowNumber ?? 0) || 0;
         const excelId = String(row["ID"] ?? "").trim();
         const name = String(row["Nombre"] ?? "").trim();
         const skuValue = String(row["SKU"] ?? "").trim();
@@ -825,17 +839,17 @@ const ProductsView: React.FC = () => {
           existingByExcelId || existingBySkuValue || existingByNameValue;
         const isUpdatingExistingProduct = Boolean(existingProduct);
 
+        const wholesalePriceRaw = row["Precio mayorista"];
+        const hasWholesalePrice = String(wholesalePriceRaw ?? "").trim() !== "";
+        const wholesalePrice = hasWholesalePrice
+          ? (parseNumberSafe(wholesalePriceRaw) || null)
+          : null;
         const priceRaw = row["Precio"];
         const priceFormattedRaw = row["Precio formateado"];
         const hasPriceValue =
           String(priceRaw ?? "").trim() !== "" ||
           String(priceFormattedRaw ?? "").trim() !== "";
         const price = parseNumberSafe(priceRaw || priceFormattedRaw);
-        const wholesalePriceRaw = row["Precio mayorista"];
-        const hasWholesalePrice = String(wholesalePriceRaw ?? "").trim() !== "";
-        const wholesalePrice = hasWholesalePrice
-          ? (parseNumberSafe(wholesalePriceRaw) || null)
-          : null;
         const cashOnDeliveryRaw = row["Envío contra entrega"] ?? row["Envio contra entrega"];
         const hasCashOnDeliveryValue = String(cashOnDeliveryRaw ?? "").trim() !== "";
 
@@ -870,16 +884,18 @@ const ProductsView: React.FC = () => {
           }
         }
 
-        if (
-          !isUpdatingExistingProduct &&
-          (!name || !finalCategoryId || !hasPriceValue || price <= 0)
-        ) {
-          skipped++;
-          continue;
+        const invalidFields: string[] = [];
+        if (!isUpdatingExistingProduct) {
+          if (!name) invalidFields.push("Nombre");
+          if (!finalCategoryId) invalidFields.push("Categoria");
+          if (!hasPriceValue) invalidFields.push("Precio");
+          else if (price <= 0) invalidFields.push("Precio mayor que 0");
+        } else if (hasPriceValue && price <= 0) {
+          invalidFields.push("Precio mayor que 0");
         }
 
-        if (isUpdatingExistingProduct && hasPriceValue && price <= 0) {
-          skipped++;
+        if (invalidFields.length) {
+          registerSkippedRow(rowNumber, invalidFields);
           continue;
         }
 
@@ -1020,8 +1036,26 @@ const ProductsView: React.FC = () => {
         importExcelRef.current.value = "";
       }
 
+      const skippedSummary = skippedDetails.length
+        ? [
+          "",
+          "Filas omitidas por campos obligatorios o invalidos:",
+          ...Array.from(skippedFieldCounts.entries())
+            .sort((a, b) => b[1] - a[1])
+            .map(([field, count]) => `- ${field}: ${count}`),
+          "",
+          "Primeras filas con error:",
+          ...skippedDetails
+            .slice(0, 10)
+            .map((detail) => `- Fila ${detail.rowNumber}: ${detail.fields.join(", ")}`),
+          ...(skippedDetails.length > 10
+            ? [`...y ${skippedDetails.length - 10} filas mas.`]
+            : []),
+        ].join("\n")
+        : "";
+
       alert(
-        `Importación completada.\nActualizados: ${updated}\nCreados: ${created}\nCategorías creadas: ${createdCategories}\nOmitidos: ${skipped}`
+        `Importación completada.\nActualizados: ${updated}\nCreados: ${created}\nCategorías creadas: ${createdCategories}\nOmitidos: ${skipped}${skippedSummary}`
       );
     } catch (error) {
       console.error("Error importando Excel:", error);
