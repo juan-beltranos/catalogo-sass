@@ -244,6 +244,8 @@ const ProductsView: React.FC = () => {
 
   // ── Drag & drop state ────────────────────────────────────────────────────
   const [savingOrder, setSavingOrder] = useState(false);
+  const [orderingMode, setOrderingMode] = useState(false);
+  const [loadingOrderingMode, setLoadingOrderingMode] = useState(false);
   const [sortByNewest, setSortByNewest] = useState(false);
   const [savingSortPreference, setSavingSortPreference] = useState(false);
   const commerceRulesRef = useRef<any>({ pricing: [], shipping: [] });
@@ -422,6 +424,28 @@ const ProductsView: React.FC = () => {
       setSearching(false);
     }
   }, [prodsRef, storeId, mapDocToProduct]);
+
+  const enterOrderingMode = useCallback(async () => {
+    if (!prodsRef || !storeId || loadingOrderingMode) return;
+    if (sortByNewest) {
+      alert("Desactiva 'Más recientes primero' para ordenar manualmente los productos.");
+      return;
+    }
+    setLoadingOrderingMode(true);
+    try {
+      if (!allProductsCache.has(storeId)) {
+        await loadAllProductsOnce();
+      } else {
+        setAllProducts(allProductsCache.get(storeId)!);
+        setAllLoaded(true);
+      }
+      setSearch("");
+      setSearchResults([]);
+      setOrderingMode(true);
+    } finally {
+      setLoadingOrderingMode(false);
+    }
+  }, [prodsRef, storeId, loadingOrderingMode, sortByNewest, loadAllProductsOnce]);
 
   const reloadAllProducts = useCallback(async () => {
     if (!prodsRef || !storeId) return;
@@ -1026,6 +1050,7 @@ const ProductsView: React.FC = () => {
         }
       }
 
+      setOrderingMode(false);
       await loadFirstPage();
 
       if (allLoaded) {
@@ -1234,6 +1259,12 @@ const ProductsView: React.FC = () => {
     await loadPage("first");
   }, [loadPage]);
 
+  const exitOrderingMode = useCallback(async () => {
+    setOrderingMode(false);
+    pageCache = null;
+    await loadFirstPage();
+  }, [loadFirstPage]);
+
   const goNext = useCallback(async () => {
     if (!hasNext || loadingPage) return;
     await loadPage("next");
@@ -1267,7 +1298,7 @@ const ProductsView: React.FC = () => {
 
     if (!over || active.id === over.id || !storeId) return;
 
-    const visibleItems = categoryFilter ? listToRender : products;
+    const visibleItems = (orderingMode || categoryFilter) ? listToRender : products;
     const oldIndex = visibleItems.findIndex((p) => p.id === active.id);
     const newIndex = visibleItems.findIndex((p) => p.id === over.id);
 
@@ -1279,6 +1310,18 @@ const ProductsView: React.FC = () => {
     if (categoryFilter) {
       updated = reordered;
       setCategoryOrderIds(reordered.map((product) => product.id));
+    } else if (orderingMode) {
+      updated = reordered.map((product, index) => ({
+        ...product,
+        order: index,
+      }));
+      setAllProducts(updated);
+      allProductsCache.set(storeId, updated);
+      setProducts(updated.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE));
+
+      if (pageCache?.storeId === storeId) {
+        pageCache.products = updated.slice((pageCache.page - 1) * PAGE_SIZE, pageCache.page * PAGE_SIZE);
+      }
     } else {
       const pageOffset = (page - 1) * PAGE_SIZE;
       updated = reordered.map((product, index) => ({
@@ -1299,7 +1342,7 @@ const ProductsView: React.FC = () => {
         p_store_id: storeId,
         p_product_ids: updated.map((product) => product.id),
         p_category_id: categoryFilter || null,
-        p_start: categoryFilter ? 0 : (page - 1) * PAGE_SIZE,
+        p_start: categoryFilter || orderingMode ? 0 : (page - 1) * PAGE_SIZE,
       });
       if (error) throw error;
     } catch (err) {
@@ -1307,6 +1350,10 @@ const ProductsView: React.FC = () => {
       const message = err instanceof Error ? err.message : String((err as any)?.message || "");
       alert(`No se pudo guardar el orden.${message ? ` ${message}` : " Intenta de nuevo."}`);
       if (categoryFilter) setCategoryOrderIds(visibleItems.map((product) => product.id));
+      else if (orderingMode) {
+        setAllProducts(visibleItems);
+        allProductsCache.set(storeId, visibleItems);
+      }
       else await loadFirstPage();
     } finally {
       setSavingOrder(false);
@@ -1414,6 +1461,7 @@ const ProductsView: React.FC = () => {
       pageCache = null;
       allProductsCache.delete(storeId);
       setAllLoaded(false);
+      setOrderingMode(false);
       await loadFirstPage();
       resetCreateForm();
       setCreateVariants([]);
@@ -1438,6 +1486,7 @@ const ProductsView: React.FC = () => {
     try {
       await deleteProductMediaFromR2([prod]);
       await deleteDoc(doc(db, "stores", storeId, "products", prod.id));
+      setOrderingMode(false);
       await loadFirstPage();
       if (allLoaded) await reloadAllProducts();
     } catch (err) {
@@ -1479,6 +1528,7 @@ const ProductsView: React.FC = () => {
       setAllProducts([]);
       setAllLoaded(false);
       setSearchResults([]);
+      setOrderingMode(false);
       setHasNext(false);
       setPage(1);
       alert(`Se eliminaron ${snapshot.docs.length} producto(s).`);
@@ -1557,6 +1607,7 @@ const ProductsView: React.FC = () => {
       pageCache = null;
       allProductsCache.delete(storeId);
       setAllLoaded(false);
+      setOrderingMode(false);
       await loadFirstPage();
       setEditingProduct(null);
     } catch (err) {
@@ -1757,6 +1808,7 @@ const ProductsView: React.FC = () => {
         imported++;
       }
 
+      setOrderingMode(false);
       await loadFirstPage();
       if (allLoaded) await reloadAllProducts();
       if (importJsonRef.current) importJsonRef.current.value = "";
@@ -1771,7 +1823,7 @@ const ProductsView: React.FC = () => {
 
   if (!storeId) return <div className="p-8 text-center">Buscando configuración de tienda...</div>;
 
-  const baseList = search ? searchResults : categoryFilter ? allProducts : products;
+  const baseList = search ? searchResults : (orderingMode || categoryFilter) ? allProducts : products;
   const listToRender = categoryFilter
     ? (() => {
       const categoryProducts = baseList.filter((product) => (product.categoryIds?.length ? product.categoryIds : [product.categoryId]).includes(categoryFilter));
@@ -1792,7 +1844,8 @@ const ProductsView: React.FC = () => {
     : sortByNewest
       ? [...baseList].sort((a, b) => getProductCreatedAtMillis(b) - getProductCreatedAtMillis(a))
       : baseList;
-  const canReorder = !search && !sortByNewest;
+  const canReorder = !search && !sortByNewest && (orderingMode || Boolean(categoryFilter));
+  const isShowingFullOrder = orderingMode || Boolean(categoryFilter);
   const categoryNameById = new Map(categories.map((category) => [category.id, category.name]));
 
   return (
@@ -1955,16 +2008,41 @@ const ProductsView: React.FC = () => {
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
+                disabled={orderingMode}
                 placeholder="Buscar por nombre, SKU o descripción..."
-                className="w-full p-2 border rounded"
+                className="w-full p-2 border rounded disabled:bg-slate-100 disabled:text-slate-400"
               />
 
               <div className="flex flex-wrap gap-2 md:col-span-2">
                 <label className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium ${sortByNewest ? "border-indigo-200 bg-indigo-50 text-indigo-700" : "border-slate-200 bg-white text-slate-700"}`}>
-                  <input type="checkbox" checked={sortByNewest} disabled={savingSortPreference}
+                  <input type="checkbox" checked={sortByNewest} disabled={savingSortPreference || orderingMode}
                     onChange={(event) => handleSortByNewestChange(event.target.checked)} />
                   Más recientes primero
                 </label>
+                <button
+                  type="button"
+                  onClick={orderingMode ? exitOrderingMode : enterOrderingMode}
+                  disabled={loadingOrderingMode || savingOrder || sortByNewest}
+                  className={`px-3 py-2 rounded text-sm font-semibold disabled:opacity-50 whitespace-nowrap ${orderingMode ? "bg-slate-900 text-white hover:bg-slate-800" : "bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-50"}`}
+                  title={sortByNewest ? "Desactiva mÃ¡s recientes primero para ordenar manualmente" : "Cargar todos los productos para ordenarlos sin paginaciÃ³n"}
+                >
+                  {loadingOrderingMode ? (
+                    <>
+                      <i className="fa-solid fa-spinner fa-spin mr-2" />
+                      Cargando orden
+                    </>
+                  ) : orderingMode ? (
+                    <>
+                      <i className="fa-solid fa-check mr-2" />
+                      Finalizar orden
+                    </>
+                  ) : (
+                    <>
+                      <i className="fa-solid fa-grip-vertical mr-2" />
+                      Ordenar productos
+                    </>
+                  )}
+                </button>
                 {search ? (
                   <button
                     type="button"
@@ -2049,6 +2127,14 @@ const ProductsView: React.FC = () => {
               </div>
             ) : null}
 
+            {orderingMode ? (
+              <div className="mt-2 rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
+                {categoryFilter
+                  ? "Ordenando todos los productos de esta categoria. La paginacion esta pausada mientras ajustas posiciones."
+                  : `Ordenando ${listToRender.length} producto(s). Puedes mover cualquier producto a cualquier posicion sin cambiar de pagina.`}
+              </div>
+            ) : null}
+
             {/* Indicador de guardado de orden */}
             {savingOrder && (
               <div className="mt-2 flex items-center gap-2 text-xs text-indigo-600">
@@ -2058,9 +2144,9 @@ const ProductsView: React.FC = () => {
             )}
 
             {/* Hint de drag & drop (solo cuando no se busca) */}
-            {!search && !loading && products.length > 1 && (
+            {!search && !loading && listToRender.length > 1 && (canReorder || sortByNewest) && (
               <div className="mt-2 flex items-center gap-1.5 text-xs text-gray-400">
-                <i className={`fa-solid ${sortByNewest ? "fa-lock" : "fa-grip-lines"}`} />
+                <i className={`fa-solid ${canReorder ? "fa-grip-lines" : "fa-lock"}`} />
                 {sortByNewest ? "Orden manual bloqueado mientras se muestran los más recientes primero" : "Arrastra las tarjetas para cambiar el orden en el catálogo"}
               </div>
             )}
@@ -2130,7 +2216,7 @@ const ProductsView: React.FC = () => {
                 </SortableContext>
               </DndContext>
 
-              {!search && !categoryFilter ? (
+              {!search && !categoryFilter && !orderingMode ? (
                 <Paginator page={page} hasNext={hasNext} hasPrev={page > 1} loading={loadingPage} onNext={goNext} onPrev={goPrev} />
               ) : null}
             </div>
