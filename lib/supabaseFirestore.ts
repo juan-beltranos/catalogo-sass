@@ -1173,10 +1173,14 @@ export const onSnapshot = (
   let active = true;
   const load = () => getDocs(ref).then((snap) => active && next(snap)).catch((err) => active && error?.(err));
   load();
-  const interval = window.setInterval(load, 30000);
+
+  const pollIntervalMs = Number(import.meta.env.VITE_SUPABASE_POLL_INTERVAL_MS || 0);
+  const shouldPoll = Number.isFinite(pollIntervalMs) && pollIntervalMs >= 60000;
+  const interval = shouldPoll ? window.setInterval(load, pollIntervalMs) : null;
+
   return () => {
     active = false;
-    window.clearInterval(interval);
+    if (interval) window.clearInterval(interval);
   };
 };
 

@@ -111,6 +111,8 @@ Crea un archivo `.env.local` en la raíz. Nunca subas este archivo ni valores re
 VITE_PUBLIC_SUPABASE_URL=https://TU_PROYECTO.supabase.co
 VITE_PUBLIC_SUPABASE_ANON_KEY=TU_ANON_KEY
 VITE_R2_PUBLIC_BASE_URL=https://TU_DOMINIO_PUBLICO_R2
+# Opcional: refresco automatico de vistas con datos. Omitirlo reduce logs de Supabase.
+# VITE_SUPABASE_POLL_INTERVAL_MS=120000
 
 # Variables exclusivas del servidor
 SUPABASE_SERVICE_ROLE_KEY=TU_SERVICE_ROLE_KEY
@@ -126,6 +128,7 @@ VITE_R2_DELETE_ENDPOINT=/api/r2-delete
 ```
 
 Las variables con prefijo `VITE_` son visibles en el navegador. Nunca uses ese prefijo para `SUPABASE_SERVICE_ROLE_KEY` ni para credenciales de R2.
+Por defecto la app no hace polling automatico contra Supabase; si necesitas refresco periodico en vistas administrativas, define `VITE_SUPABASE_POLL_INTERVAL_MS` con 60000 ms o mas.
 
 ## Instalación local
 
