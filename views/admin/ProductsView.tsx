@@ -31,6 +31,7 @@ import { cldImg, deleteFromR2, uploadImagesToR2, uploadToR2 } from "@/helpers/r2
 import * as XLSX from "xlsx";
 import { getPlanLimitMessage } from "@/helpers/planLimits";
 import { useSubscriptionAccess } from "@/hooks/useSubscriptionAccess";
+import { getCatalogShareUrl } from "@/helpers/catalogLinks";
 
 import {
   DndContext,
@@ -157,6 +158,7 @@ type SortableProductCardProps = {
   canDrag: boolean;
   openEdit: (p: Product) => void;
   handleDeleteProduct: (p: Product) => void;
+  handleShareProduct: (p: Product) => void;
 };
 
 const SortableProductCard: React.FC<SortableProductCardProps> = ({
@@ -166,6 +168,7 @@ const SortableProductCard: React.FC<SortableProductCardProps> = ({
   canDrag,
   openEdit,
   handleDeleteProduct,
+  handleShareProduct,
 }) => {
   const {
     attributes,
@@ -195,6 +198,14 @@ const SortableProductCard: React.FC<SortableProductCardProps> = ({
           <i className="fa-solid fa-grip-vertical" />
         </button>
         <div className="flex gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
+          <button
+            onClick={() => handleShareProduct(prod)}
+            disabled={prod.isActive === false}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
+            title={prod.isActive === false ? "Activa el producto para compartirlo" : "Compartir enlace del producto"}
+            aria-label={`Compartir ${prod.name}`}
+            type="button"
+          ><i className="fa-solid fa-share-nodes" /></button>
           <button onClick={() => openEdit(prod)} className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100" title="Editar" type="button"><i className="fa-solid fa-pen" /></button>
           <button onClick={() => handleDeleteProduct(prod)} className="flex h-9 w-9 items-center justify-center rounded-full bg-red-50 text-red-500 hover:bg-red-100" title="Eliminar" type="button"><i className="fa-solid fa-trash-can" /></button>
         </div>
@@ -231,6 +242,8 @@ const ProductsView: React.FC = () => {
   const planAccess = useSubscriptionAccess();
 
   const [storeId, setStoreId] = useState<string | null>(null);
+  const [storeSlug, setStoreSlug] = useState("");
+  const [sharedProductId, setSharedProductId] = useState<string | null>(null);
   const [hasActiveSubscription, setHasActiveSubscription] = useState<boolean>(false);
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -314,6 +327,7 @@ const ProductsView: React.FC = () => {
       const store = await getStoreForOwner(user.uid);
       if (store) {
         setStoreId(store.id);
+        setStoreSlug(String(store.data.slug || ""));
         setHasActiveSubscription(store.data.hasActiveSubscription === true);
         commerceRulesRef.current = store.data.commerceRules ?? { pricing: [], shipping: [] };
         setSortByNewest(commerceRulesRef.current.sortProductsByNewest === true);
@@ -323,6 +337,24 @@ const ProductsView: React.FC = () => {
     };
     fetchStore();
   }, [user]);
+
+  const handleShareProduct = useCallback(async (product: Product) => {
+    if (!storeSlug || product.isActive === false) return;
+    const url = getCatalogShareUrl(storeSlug, { producto: product.id });
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: product.name, text: product.name, url });
+        return;
+      }
+      await navigator.clipboard.writeText(url);
+      setSharedProductId(product.id);
+      window.setTimeout(() => setSharedProductId((current) => current === product.id ? null : current), 2200);
+    } catch (error) {
+      if ((error as DOMException)?.name !== "AbortError") {
+        window.prompt("Copia el enlace del producto:", url);
+      }
+    }
+  }, [storeSlug]);
 
   const catsRef = useMemo(() => {
     if (!storeId) return null;
@@ -1850,6 +1882,11 @@ const ProductsView: React.FC = () => {
 
   return (
     <div className="space-y-8">
+      {sharedProductId ? (
+        <div className="fixed left-1/2 top-4 z-[100] -translate-x-1/2 rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-lg">
+          ¡Enlace del producto copiado!
+        </div>
+      ) : null}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Productos</h1>
@@ -2185,6 +2222,7 @@ const ProductsView: React.FC = () => {
                               canDrag={canReorder}
                               openEdit={openEdit}
                               handleDeleteProduct={handleDeleteProduct}
+                              handleShareProduct={handleShareProduct}
                             />
                           );
                         })
@@ -2202,7 +2240,8 @@ const ProductsView: React.FC = () => {
                         <SortableProductCard key={prod.id} prod={prod} displayPrice={displayPrice}
                           categoryNames={(prod.categoryIds?.length ? prod.categoryIds : [prod.categoryId]).filter(Boolean).map((id) => categoryNameById.get(id || "")).filter(Boolean).join(", ")}
                           canDrag={canReorder}
-                          openEdit={openEdit} handleDeleteProduct={handleDeleteProduct} />
+                          openEdit={openEdit} handleDeleteProduct={handleDeleteProduct}
+                          handleShareProduct={handleShareProduct} />
                       );
                     })
                   )}

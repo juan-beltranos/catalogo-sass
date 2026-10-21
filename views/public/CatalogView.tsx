@@ -405,6 +405,7 @@ const CatalogView: React.FC = () => {
 
   const [activeCategoryId, setActiveCategoryId] = useState<string>("all");
   const categoryFromUrl = searchParams.get("category");
+  const productFromUrl = searchParams.get("producto");
   const isWholesaleCatalog = searchParams.get("tipo") === "mayorista";
   const cartStorageId = slug
     ? cartStorageKey(`${slug}:${isWholesaleCatalog ? "mayorista" : "publico"}`)
@@ -453,6 +454,24 @@ const CatalogView: React.FC = () => {
   }>({ open: false, product: null, selectedVariantId: null, quantity: 1 });
 
   const [shareToast, setShareToast] = useState(false);
+
+  useEffect(() => {
+    if (!store?.id || !productFromUrl || catalogUnavailableReason) return;
+    let active = true;
+    const openSharedProduct = async () => {
+      try {
+        const snapshot = await getDoc(doc(publicSupabase, "stores", store.id, "products", productFromUrl));
+        if (!active || !snapshot.exists()) return;
+        const product = { id: snapshot.id, ...(snapshot.data() as any) } as Product;
+        if (product.isActive === false) return;
+        setProductModal({ open: true, product, selectedVariantId: null, quantity: 1 });
+      } catch (error) {
+        console.error("No se pudo abrir el producto compartido:", error);
+      }
+    };
+    openSharedProduct();
+    return () => { active = false; };
+  }, [store?.id, productFromUrl, catalogUnavailableReason]);
 
   // ── Configuración de envío derivada del store ──
   const shippingConfig = useMemo(() => getShippingConfig(store), [store]);
@@ -1349,7 +1368,9 @@ const CatalogView: React.FC = () => {
 
   const handleShare = async () => {
     if (!slug) return;
-    const url = getCatalogShareUrl(slug, Object.fromEntries(searchParams.entries()));
+    const params = Object.fromEntries(searchParams.entries());
+    delete params.producto;
+    const url = getCatalogShareUrl(slug, params);
     if (navigator.share) {
       try {
         await navigator.share({ title: store?.name, url });
@@ -1358,6 +1379,35 @@ const CatalogView: React.FC = () => {
       await navigator.clipboard.writeText(url);
       setShareToast(true);
       setTimeout(() => setShareToast(false), 2200);
+    }
+  };
+
+  const handleShareProduct = async (product: Product) => {
+    if (!slug) return;
+    const params = Object.fromEntries(searchParams.entries());
+    params.producto = product.id;
+    const url = getCatalogShareUrl(slug, params);
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: product.name, text: product.name, url });
+        return;
+      }
+      await navigator.clipboard.writeText(url);
+      setShareToast(true);
+      window.setTimeout(() => setShareToast(false), 2200);
+    } catch (error) {
+      if ((error as DOMException)?.name !== "AbortError") {
+        window.prompt("Copia el enlace del producto:", url);
+      }
+    }
+  };
+
+  const closeProductModal = () => {
+    setProductModal({ open: false, product: null, selectedVariantId: null, quantity: 1 });
+    if (searchParams.has("producto")) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("producto");
+      setSearchParams(next, { replace: true });
     }
   };
 
@@ -1721,7 +1771,7 @@ const CatalogView: React.FC = () => {
               return (
                 <div
                   key={prod.id}
-                  className="group bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition overflow-hidden flex flex-col"
+                  className="group relative bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition overflow-hidden flex flex-col"
                 >
                   <button
                     type="button"
@@ -1749,6 +1799,15 @@ const CatalogView: React.FC = () => {
                         </span>
                       </div>
                     ) : null}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleShareProduct(prod)}
+                    className="absolute right-3 top-3 z-30 grid h-10 w-10 place-items-center rounded-full border border-white/70 bg-white/95 text-gray-700 shadow-md transition hover:scale-105 hover:text-indigo-600"
+                    aria-label={`Compartir ${prod.name}`}
+                    title="Compartir enlace del producto"
+                  >
+                    <i className="fa-solid fa-share-nodes" />
                   </button>
 
                   <div className="p-3 sm:p-4 flex-1 flex flex-col">
@@ -1865,15 +1924,24 @@ const CatalogView: React.FC = () => {
                   {productModal.product.name}
                 </div>
               </div>
-              <button
-                onClick={() =>
-                  setProductModal({ open: false, product: null, selectedVariantId: null, quantity: 1 })
-                }
-                className="h-10 w-10 rounded-full border flex items-center justify-center hover:bg-gray-50 shrink-0"
-                aria-label="Cerrar"
-              >
-                <i className="fa-solid fa-xmark" />
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleShareProduct(productModal.product!)}
+                  className="h-10 w-10 rounded-full border flex items-center justify-center hover:bg-gray-50 text-indigo-600"
+                  aria-label={`Compartir ${productModal.product.name}`}
+                  title="Compartir enlace del producto"
+                >
+                  <i className="fa-solid fa-share-nodes" />
+                </button>
+                <button
+                  onClick={closeProductModal}
+                  className="h-10 w-10 rounded-full border flex items-center justify-center hover:bg-gray-50"
+                  aria-label="Cerrar"
+                >
+                  <i className="fa-solid fa-xmark" />
+                </button>
+              </div>
             </div>
 
             <div className="min-h-0 flex-1 overscroll-contain overflow-y-auto p-3 sm:p-5 space-y-4">
@@ -2056,9 +2124,7 @@ const CatalogView: React.FC = () => {
             <div className="grid shrink-0 grid-cols-2 gap-2 border-t bg-white p-3 sm:p-4">
               <button
                 type="button"
-                onClick={() =>
-                  setProductModal({ open: false, product: null, selectedVariantId: null, quantity: 1 })
-                }
+                onClick={closeProductModal}
                 className="w-full rounded-2xl border px-3 py-3 font-extrabold hover:bg-gray-50"
               >
                 Cancelar
@@ -2075,7 +2141,7 @@ const CatalogView: React.FC = () => {
                   } else {
                     addToCart(p, undefined, productModal.quantity);
                   }
-                  setProductModal({ open: false, product: null, selectedVariantId: null, quantity: 1 });
+                  closeProductModal();
                 }}
                 className="w-full rounded-2xl px-3 py-3 font-extrabold text-white hover:opacity-90"
                 style={{ background: brandColor }}
