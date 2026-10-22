@@ -48,6 +48,7 @@ import { getCatalogShareUrl } from "@/helpers/catalogLinks";
 import { normalizeCheckoutFormFields } from "@/helpers/checkoutFields";
 
 const PAGE_SIZE = 20;
+type CatalogViewMode = "grid" | "list";
 
 type PageCache = {
   products: Product[];
@@ -413,6 +414,13 @@ const CatalogView: React.FC = () => {
   const pendingCartRestoreRef = useRef<string | null>(null);
 
   const [search, setSearch] = useState("");
+  const [viewMode, setViewMode] = useState<CatalogViewMode>(() => {
+    try {
+      return window.localStorage.getItem("catalog-view-mode") === "list" ? "list" : "grid";
+    } catch {
+      return "grid";
+    }
+  });
   const [queryError, setQueryError] = useState<string | null>(null);
 
   const [loadingMore, setLoadingMore] = useState(false);
@@ -424,6 +432,14 @@ const CatalogView: React.FC = () => {
   const [locationTooltipOpen, setLocationTooltipOpen] = useState(false);
 
   const isSearching = search.trim().length > 0;
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("catalog-view-mode", viewMode);
+    } catch {
+      // El catálogo sigue funcionando si el navegador bloquea el almacenamiento local.
+    }
+  }, [viewMode]);
 
   useEffect(() => {
     introStartedAtRef.current = Date.now();
@@ -1434,7 +1450,7 @@ const CatalogView: React.FC = () => {
     );
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-28">
+    <div className="min-h-screen bg-[#f7f8fb] pb-28">
       {showIntro ? <CatalogIntro store={store} exiting={introExiting} /> : null}
       {/* ── Toast compartir ── */}
       {shareToast && (
@@ -1633,20 +1649,21 @@ const CatalogView: React.FC = () => {
       </div>
 
       {/* ── Categories bar ── */}
-      <div className="sticky top-0 z-30 bg-white/90 backdrop-blur border-b mt-3">
-        <div className="max-w-6xl mx-auto px-4 py-3">
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+      <div className="sticky top-0 z-30 border-b border-gray-200/70 bg-[#f7f8fb]/95 backdrop-blur-xl mt-3">
+        <div className="max-w-6xl mx-auto px-3 sm:px-4 py-3">
+          <div className="rounded-2xl bg-[#eceff5] p-1.5 shadow-inner shadow-gray-200/40">
+              <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
             <button
               type="button"
               onClick={() => handleCategoryChange("all")}
-              className="shrink-0 px-4 py-2 rounded-full text-sm font-extrabold border transition"
+              className="shrink-0 px-4 py-2.5 rounded-xl text-sm font-extrabold transition-all"
               style={
                 activeCategoryId === "all"
-                  ? { background: brandColor, color: "#fff", borderColor: brandColor }
-                  : { background: "#fff", color: "#374151", borderColor: "#e5e7eb" }
+                  ? { background: brandColor, color: "#fff", boxShadow: `0 6px 16px ${brandColor}35` }
+                  : { color: "#64748b" }
               }
             >
-              Todo
+              Inicio
             </button>
 
             {categories.map((cat) => (
@@ -1654,36 +1671,37 @@ const CatalogView: React.FC = () => {
                 key={cat.id}
                 type="button"
                 onClick={() => handleCategoryChange(cat.id)}
-                className="shrink-0 px-4 py-2 rounded-full text-sm font-extrabold border transition"
+                className="shrink-0 px-4 py-2.5 rounded-xl text-sm font-extrabold transition-all"
                 style={
                   activeCategoryId === cat.id
-                    ? { background: brandColor, color: "#fff", borderColor: brandColor }
-                    : { background: "#fff", color: "#374151", borderColor: "#e5e7eb" }
+                    ? { background: brandColor, color: "#fff", boxShadow: `0 6px 16px ${brandColor}35` }
+                    : { color: "#64748b" }
                 }
               >
                 {cat.name}
               </button>
             ))}
+              </div>
           </div>
         </div>
       </div>
 
       {/* ── Content ── */}
-      <main className="max-w-6xl mx-auto px-4 py-6 space-y-5">
+      <main className="max-w-6xl mx-auto px-3 sm:px-4 py-5 sm:py-6 space-y-5">
         <div className="relative">
-          <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm" />
+          <i className="fa-solid fa-magnifying-glass absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por nombre, descripción, categoría, variante..."
-            className="w-full pl-9 pr-10 py-2.5 rounded-2xl border border-gray-200 bg-white focus:outline-none focus:ring-2"
+            placeholder="Buscar en todo el catálogo..."
+            className="w-full h-14 sm:h-16 pl-12 pr-12 rounded-2xl sm:rounded-3xl border border-gray-200 bg-white text-[15px] shadow-sm placeholder:text-slate-400 focus:outline-none focus:ring-2"
             style={{ "--tw-ring-color": brandColor + "55" } as any}
           />
           {search.trim() ? (
             <button
               type="button"
               onClick={() => setSearch("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+              className="absolute right-4 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700"
               aria-label="Limpiar"
             >
               <i className="fa-solid fa-xmark" />
@@ -1697,22 +1715,49 @@ const CatalogView: React.FC = () => {
           </div>
         ) : null}
 
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-gray-500">
-            {activeCategoryId === "all"
-              ? "Todos los productos"
-              : `Categoría: ${categories.find((c) => c.id === activeCategoryId)?.name || ""}`}
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0 text-sm text-gray-500">
+            <span className="block truncate">
+              {activeCategoryId === "all"
+                ? "Todos los productos"
+                : `Categoría: ${categories.find((c) => c.id === activeCategoryId)?.name || ""}`}
+            </span>
+            {activeCategoryId !== "all" ? (
+              <button
+                type="button"
+                onClick={() => handleCategoryChange("all")}
+                className="mt-0.5 text-xs font-extrabold hover:opacity-70"
+                style={{ color: brandColor }}
+              >
+                Ver todo
+              </button>
+            ) : null}
           </div>
-          {activeCategoryId !== "all" ? (
+
+          <div className="flex shrink-0 rounded-2xl bg-[#eceff5] p-1.5" role="group" aria-label="Vista de productos">
             <button
               type="button"
-              onClick={() => handleCategoryChange("all")}
-              className="text-sm font-extrabold hover:opacity-70"
-              style={{ color: brandColor }}
+              onClick={() => setViewMode("grid")}
+              className="grid h-10 w-10 place-items-center rounded-xl transition-all"
+              style={viewMode === "grid" ? { background: brandColor, color: "#fff", boxShadow: `0 6px 16px ${brandColor}35` } : { color: "#64748b" }}
+              aria-label="Ver productos en cuadrícula"
+              aria-pressed={viewMode === "grid"}
+              title="Vista en cuadrícula"
             >
-              Ver todo
+              <i className="fa-solid fa-border-all" />
             </button>
-          ) : null}
+            <button
+              type="button"
+              onClick={() => setViewMode("list")}
+              className="grid h-10 w-10 place-items-center rounded-xl transition-all"
+              style={viewMode === "list" ? { background: brandColor, color: "#fff", boxShadow: `0 6px 16px ${brandColor}35` } : { color: "#64748b" }}
+              aria-label="Ver productos en lista"
+              aria-pressed={viewMode === "list"}
+              title="Vista en lista"
+            >
+              <i className="fa-solid fa-list-ul" />
+            </button>
+          </div>
         </div>
 
         {queryError ? (
@@ -1757,7 +1802,10 @@ const CatalogView: React.FC = () => {
             No hay productos en esta categoría.
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+          <div className={viewMode === "grid"
+            ? "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5"
+            : "grid grid-cols-1 gap-3 sm:gap-4"}
+          >
             {filteredProducts.map((prod) => {
               const img = getProductMainImage(prod);
               const imgOptim = img
@@ -1769,27 +1817,28 @@ const CatalogView: React.FC = () => {
               const cardPrice = getProductCardPrice(prod, isWholesaleCatalog);
 
               return (
-                <div
+                <article
                   key={prod.id}
-                  className="group relative bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition overflow-hidden flex flex-col"
+                  className={`group relative min-w-0 overflow-hidden rounded-[1.5rem] border border-gray-200/80 bg-white shadow-[0_5px_18px_rgba(15,23,42,0.06)] transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_12px_30px_rgba(15,23,42,0.11)] ${viewMode === "grid" ? "flex flex-col" : "flex min-h-44 flex-row sm:min-h-52"}`}
                 >
                   <button
                     type="button"
                     onClick={() => openAddFlow(prod)}
-                    className="relative aspect-square bg-gray-100 overflow-hidden text-left"
+                    className={`relative shrink-0 overflow-hidden bg-[#f1f2f4] text-left ${viewMode === "grid" ? "aspect-[4/3] w-full sm:aspect-square" : "w-[38%] min-w-[8.5rem] sm:w-56"}`}
                     aria-label={`Ver ${prod.name}`}
                   >
                     {img ? (
                       <img
                         src={imgOptim}
                         alt={prod.name}
-                        className="relative z-10 h-full w-full object-contain"
+                        className="relative z-10 h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
                         loading="lazy"
                         decoding="async"
                       />
                     ) : (
-                      <div className="h-full w-full flex items-center justify-center text-gray-400">
-                        <i className="fa-regular fa-image text-2xl" />
+                      <div className="h-full w-full flex flex-col items-center justify-center gap-2 px-3 text-center text-gray-400">
+                        <i className="fa-solid fa-burger text-3xl opacity-30" />
+                        <span className="text-[10px] sm:text-xs font-bold leading-tight">Sin imagen disponible</span>
                       </div>
                     )}
                     {!isWholesaleCatalog && badge ? (
@@ -1803,23 +1852,24 @@ const CatalogView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => handleShareProduct(prod)}
-                    className="absolute right-3 top-3 z-30 grid h-10 w-10 place-items-center rounded-full border border-white/70 bg-white/95 text-gray-700 shadow-md transition hover:scale-105 hover:text-indigo-600"
+                    className="absolute right-2.5 top-2.5 z-30 grid h-9 w-9 place-items-center rounded-full border border-white/80 bg-white/95 text-gray-600 shadow-md transition hover:scale-105"
+                    style={{ color: brandColor }}
                     aria-label={`Compartir ${prod.name}`}
                     title="Compartir enlace del producto"
                   >
                     <i className="fa-solid fa-share-nodes" />
                   </button>
 
-                  <div className="p-3 sm:p-4 flex-1 flex flex-col">
+                  <div className={`min-w-0 flex-1 flex flex-col ${viewMode === "grid" ? "p-3.5 sm:p-4" : "p-4 pr-3 sm:p-5"}`}>
                     <div className="flex flex-col gap-1">
                       <div className="min-w-0">
-                        <h3 className="text-sm sm:text-[15px] font-extrabold text-gray-900 break-words">
+                        <h3 className={`${viewMode === "grid" ? "text-[15px] sm:text-base" : "text-base sm:text-lg pr-8"} font-black leading-snug text-slate-950 break-words`}>
                           {prod.name}
                         </h3>
                       </div>
                       {prod.sku ? (
                         <div className="min-w-0 max-w-full">
-                          <span className="inline-block max-w-full text-[10px] leading-4 font-bold text-gray-500 bg-gray-100 border border-gray-200 rounded-lg px-2 py-1 break-all whitespace-normal">
+                          <span className="inline-block max-w-full text-[9px] leading-4 font-bold text-gray-500 bg-gray-100 rounded-lg px-2 py-0.5 break-all whitespace-normal">
                             SKU: {prod.sku}
                           </span>
                         </div>
@@ -1827,53 +1877,57 @@ const CatalogView: React.FC = () => {
                     </div>
 
                     {prod.description ? (
-                      <p className="text-xs text-gray-500 mt-1 line-clamp-2">
+                      <p className={`${viewMode === "grid" ? "text-xs" : "text-sm"} text-slate-500 mt-2 leading-relaxed line-clamp-2`}>
                         {prod.description}
                       </p>
                     ) : (
-                      <p className="text-xs text-gray-400 mt-1 line-clamp-2">
+                      <p className="text-xs text-gray-400 mt-2 line-clamp-2">
                         &nbsp;
                       </p>
                     )}
 
-                    <div className="mt-2">
+                    <div className="mt-auto pt-3 flex items-end justify-between gap-2">
+                      <div className="min-w-0">
                       {discOk ? (
-                        <div className="flex items-baseline gap-2">
-                          <span className="text-xs text-gray-400 line-through font-bold">
+                        <div className="flex flex-col sm:flex-row sm:items-baseline sm:gap-2">
+                          <span className="text-[10px] sm:text-xs text-gray-400 line-through font-bold">
                             {cardPrice.hasVariants
                               ? `Desde ${formatCOP(cardPrice.base)}`
                               : formatCOP(cardPrice.base)}
                           </span>
-                          <span className="text-sm font-extrabold">
+                          <span className="text-base sm:text-lg font-black" style={{ color: brandColor }}>
                             {cardPrice.hasVariants
                               ? `Desde ${formatCOP(cardPrice.final)}`
                               : formatCOP(cardPrice.final)}
                           </span>
                         </div>
                       ) : (
-                        <div className="text-sm font-extrabold">
+                        <div className="text-base sm:text-lg font-black" style={{ color: brandColor }}>
                           {cardPrice.hasVariants
                             ? `Desde ${formatCOP(cardPrice.base)}`
                             : formatCOP(cardPrice.base)}
                         </div>
                       )}
-                    </div>
-
-                    <button
-                      onClick={() => openAddFlow(prod)}
-                      className="mt-3 w-full rounded-xl py-2.5 text-xs sm:text-sm font-extrabold text-white hover:opacity-90 active:scale-[0.99] transition"
-                      style={{ background: brandColor }}
-                    >
-                      {hasVariants ? "Elegir variante" : "Añadir al carrito"}
-                    </button>
-
-                    {hasVariants ? (
-                      <div className="mt-2 text-[11px] text-gray-500">
-                        Variantes disponibles: <b>{prod.variants?.length}</b>
+                      {hasVariants ? (
+                        <div className="mt-1 text-[10px] font-semibold text-gray-400">
+                          {prod.variants?.length} variantes
+                        </div>
+                      ) : null}
                       </div>
-                    ) : null}
+
+                      <button
+                        type="button"
+                        onClick={() => openAddFlow(prod)}
+                        className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-white shadow-lg transition hover:scale-105 hover:opacity-90 active:scale-95 sm:h-12 sm:w-12"
+                        style={{ background: brandColor, boxShadow: `0 8px 18px ${brandColor}38` }}
+                        aria-label={hasVariants ? `Elegir variante de ${prod.name}` : `Añadir ${prod.name} al carrito`}
+                        title={hasVariants ? "Elegir variante" : "Añadir al carrito"}
+                      >
+                        <i className={`fa-solid ${hasVariants ? "fa-sliders" : "fa-plus"} text-base`} />
+                      </button>
+                    </div>
                   </div>
-                </div>
+                </article>
               );
             })}
           </div>
