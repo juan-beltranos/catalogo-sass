@@ -1824,14 +1824,14 @@ const CatalogView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => openAddFlow(prod)}
-                    className={`relative shrink-0 overflow-hidden bg-[#f1f2f4] text-left ${viewMode === "grid" ? "aspect-[4/3] w-full sm:aspect-square" : "w-[38%] min-w-[8.5rem] sm:w-56"}`}
+                    className={`relative shrink-0 overflow-hidden bg-white text-left ${viewMode === "grid" ? "aspect-[4/3] w-full sm:aspect-square" : "w-[38%] min-w-[8.5rem] sm:w-56"}`}
                     aria-label={`Ver ${prod.name}`}
                   >
                     {img ? (
                       <img
                         src={imgOptim}
                         alt={prod.name}
-                        className="relative z-10 h-full w-full object-contain transition duration-500 group-hover:scale-[1.03]"
+                        className={`z-10 object-contain transition duration-500 group-hover:scale-[1.03] ${viewMode === "grid" ? "absolute inset-0 m-auto h-[90%] w-[90%]" : "relative h-full w-full"}`}
                         loading="lazy"
                         decoding="async"
                       />
