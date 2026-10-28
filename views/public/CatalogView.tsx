@@ -1831,7 +1831,7 @@ const CatalogView: React.FC = () => {
                       <img
                         src={imgOptim}
                         alt={prod.name}
-                        className="relative z-10 h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
+                        className="relative z-10 h-full w-full object-contain transition duration-500 group-hover:scale-[1.03]"
                         loading="lazy"
                         decoding="async"
                       />
