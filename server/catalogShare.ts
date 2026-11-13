@@ -86,7 +86,7 @@ export async function buildCatalogShareHtml(params: {
   const supabase = getSupabase(params.env);
   const { data: store, error } = await supabase
     .from("stores")
-    .select("name, slug, description, logo_url, banner_url, business_type, city, status")
+    .select("id, name, slug, description, logo_url, banner_url, business_type, city, status")
     .eq("slug", slug)
     .maybeSingle();
 
@@ -107,12 +107,47 @@ export async function buildCatalogShareHtml(params: {
 
   const storeName = String(store.name || slug).trim();
   const business = [store.business_type, store.city].filter(Boolean).join(" en ");
-  const title = storeName;
+  let title = storeName;
   const savedDescription = String(store.description || "").trim();
-  const description = savedDescription || (business
+  let description = savedDescription || (business
     ? `${business}. Conoce los productos de ${storeName} y haz tu pedido en linea.`
     : `Conoce los productos de ${storeName} y haz tu pedido en linea.`);
-  const imageUrl = absoluteUrl(store.logo_url || store.banner_url, params.origin);
+  let imageUrl = absoluteUrl(store.logo_url || store.banner_url, params.origin);
+  let imageAlt = `Logo de ${storeName}`;
+
+  const productId = new URLSearchParams(params.query || "").get("producto")?.trim();
+  // Los enlaces del catalogo usan UUID. Un ID invalido conserva el preview de la tienda.
+  if (productId && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(productId)) {
+    const { data: product, error: productError } = await supabase
+      .from("products")
+      .select("id, name, description")
+      .eq("id", productId)
+      .eq("store_id", store.id)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (productError) throw productError;
+
+    if (product) {
+      const { data: image, error: imageError } = await supabase
+        .from("product_images")
+        .select("url")
+        .eq("product_id", product.id)
+        .eq("store_id", store.id)
+        .order("sort_order", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (imageError) throw imageError;
+
+      title = String(product.name || storeName).trim();
+      description = String(product.description || "").trim() || `Conoce ${title} en ${storeName} y haz tu pedido en linea.`;
+      if (image?.url) {
+        imageUrl = absoluteUrl(image.url, params.origin);
+        imageAlt = title;
+      }
+    }
+  }
 
   return {
     status: 200,
@@ -120,7 +155,7 @@ export async function buildCatalogShareHtml(params: {
       title,
       description,
       imageUrl,
-      imageAlt: `Logo de ${storeName}`,
+      imageAlt,
       shareUrl,
       redirectUrl: appPath,
     }),
@@ -173,7 +208,7 @@ function renderShareHtml(params: {
   <meta http-equiv="refresh" content="0;url=${redirectUrl}">
 </head>
 <body>
-  <script>window.location.replace(${JSON.stringify(params.redirectUrl)});</script>
+  <script>window.location.replace(${JSON.stringify(params.redirectUrl).replace(/</g, "\\u003c")});</script>
   <p>Abriendo catalogo seguro...</p>
 </body>
 </html>`;
