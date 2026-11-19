@@ -1,5 +1,7 @@
 import { SidebarItemProps, SidebarProps } from '@/interfaces';
 import React from 'react';
+import { useAuth } from '@/context/AuthContext';
+import { SUPER_ADMIN_EMAIL } from '@/lib/superAdmin';
 import { Link, useLocation } from 'react-router-dom';
 
 type MenuItem = {
@@ -63,6 +65,7 @@ const Sidebar: React.FC<SidebarCustomProps> = ({
   paidModulesAllowed = false,
 }) => {
   const location = useLocation();
+  const { user } = useAuth();
 
   const canUseAdmin = hasActiveSubscription === true;
 
@@ -168,6 +171,11 @@ const Sidebar: React.FC<SidebarCustomProps> = ({
             disabled={item.disabled}
           />
         ))}
+        {user?.email?.trim().toLowerCase() === SUPER_ADMIN_EMAIL && (
+          <div className="mt-5 border-t border-gray-100 pt-4">
+            <SidebarItem to="/system/admin" icon="fa-shield-halved" label="Administrador" active={false} onNavigate={onNavigate} />
+          </div>
+        )}
       </div>
     </aside>
   );

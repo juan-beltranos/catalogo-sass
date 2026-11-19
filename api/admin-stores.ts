@@ -1,6 +1,7 @@
 import { adminStoresAction } from "../server/adminStores.js";
 
 export default async function handler(req: any, res: any) {
+  res.setHeader("Cache-Control", "no-store");
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
   try {
     const result = await adminStoresAction(req.body || {}, req.headers.authorization);

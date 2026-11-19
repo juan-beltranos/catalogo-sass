@@ -38,6 +38,7 @@ const App: React.FC = () => {
           <Route path="/admin/register" element={<RegisterView />} />
 
           <Route path="/system/stores" element={<SuperAdminRoute><StoresView /></SuperAdminRoute>} />
+          <Route path="/system/admin" element={<SuperAdminRoute><StoresView /></SuperAdminRoute>} />
 
           {/* Protected Admin Routes */}
           <Route path="/admin" element={<ProtectedRoute />}>
