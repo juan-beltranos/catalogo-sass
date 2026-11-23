@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test:inventory": "node scripts/test-inventory.mjs",
     "test:subscription": "node --env-file=.env.local scripts/test-subscription-flow.mjs"
   },
   "dependencies": {
@@ -24,6 +25,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.3.14",
     "@types/node": "^22.14.0",
     "@types/react": "^19.2.14",
     "@vitejs/plugin-react": "^5.0.0",

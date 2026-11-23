@@ -27,6 +27,8 @@ export type Variant = {
 
 export type Product = {
     id: string;
+    stock?: number;
+    trackStock?: boolean;
     name: string;
     sku?: string;
     description?: string;

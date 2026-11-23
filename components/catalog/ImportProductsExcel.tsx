@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import * as XLSX from "xlsx";
+import { parseStock } from "@/helpers/inventory";
 import {
     collection,
     doc,
@@ -18,6 +19,7 @@ type Row = {
     name: string;
     categoryName: string;
     price: number;
+    stock?: number;
 };
 
 function parseMoneyToNumber(v: any): number {
@@ -61,7 +63,9 @@ export default function ImportProductsExcel({ storeId }: { storeId: string }) {
                 const priceRaw = pick(r, ["PRECIO", "Precio", "precio", "PRICE", "price", "PRECIO FINAL"]);
                 const price = parseMoneyToNumber(priceRaw);
 
-                return { sku, name, categoryName, price };
+                const rawStock = pick(r, ["Stock", "STOCK", "stock", "cantidad", "quantity"]);
+                const stock = rawStock === undefined ? undefined : parseStock(rawStock);
+                return { sku, name, categoryName, price, stock };
             })
             .filter((r) => r.name && r.categoryName && r.price > 0);
 
@@ -132,6 +136,8 @@ export default function ImportProductsExcel({ storeId }: { storeId: string }) {
                         name: r.name,
                         categoryId: catId,
                         price: r.price,
+                        stock: r.stock ?? 0,
+                        trackStock: r.stock !== undefined,
                         discount: null,
                         images: [],
                         videos: [],
@@ -168,7 +174,7 @@ export default function ImportProductsExcel({ storeId }: { storeId: string }) {
                     setFile(f);
                     setRows([]);
                     setResult(null);
-                    if (f) readExcel(f);
+                    if (f) readExcel(f).catch((error) => alert(error.message));
                 }}
             />
 

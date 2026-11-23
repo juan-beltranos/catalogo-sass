@@ -1,3 +1,5 @@
+import { getErrorMessage } from "./errorMessage";
+
 export type R2ResourceType = "image" | "video";
 
 export type R2UploadResult = {
@@ -136,7 +138,12 @@ export async function uploadImagesToR2(params: {
 }): Promise<R2UploadResult[]> {
   const uploaded: R2UploadResult[] = [];
   for (const [index, file] of params.files.entries()) {
-    const data = await uploadToR2({ file, folder: params.folder, resourceType: "image" });
+    let data: R2UploadResult;
+    try {
+      data = await uploadToR2({ file, folder: params.folder, resourceType: "image" });
+    } catch (error) {
+      throw new Error(`No se pudo subir la imagen "${file.name}". ${getErrorMessage(error, "Intenta nuevamente.")}`);
+    }
     uploaded.push(data);
     params.onFileDone?.({ index, file, data });
   }

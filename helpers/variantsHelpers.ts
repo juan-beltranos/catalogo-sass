@@ -36,7 +36,7 @@ export function generateVariantsFromOptions(
         const existing = prevMap.get(key);
 
         return {
-            id: existing?.id ?? uid(),
+            id: existing?.id ?? crypto.randomUUID(),
             optionValues,
             title: optionValues.join(" / "),
             price: existing?.price ?? basePrice,

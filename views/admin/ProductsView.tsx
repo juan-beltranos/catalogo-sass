@@ -1,4 +1,7 @@
 import React, { useEffect, useMemo, useState, useRef, useCallback } from "react";
+import StockEditor from "@/components/admin/StockEditor";
+import { availableStock, exportInventoryFields, inventorySnapshot, parseInventoryFields, parseStock } from "@/helpers/inventory";
+import { mergeInventory, useInventorySync } from "@/hooks/useInventorySync";
 import {
   collection,
   addDoc,
@@ -30,6 +33,7 @@ import Paginator from "@/components/catalog/Paginator";
 import { cldImg, deleteFromR2, uploadImagesToR2, uploadToR2 } from "@/helpers/r2Upload";
 import * as XLSX from "xlsx";
 import { getPlanLimitMessage } from "@/helpers/planLimits";
+import { getErrorMessage } from "@/helpers/errorMessage";
 import { useSubscriptionAccess } from "@/hooks/useSubscriptionAccess";
 import { getCatalogShareUrl } from "@/helpers/catalogLinks";
 
@@ -229,6 +233,7 @@ const SortableProductCard: React.FC<SortableProductCardProps> = ({
             <i className="fa-solid fa-tag text-slate-400" /><span className="truncate">{categoryNames || "Sin categoría"}</span>
           </div>
           <p className="mt-2 text-lg font-extrabold text-blue-600">{displayPrice}</p>
+          <p className="text-xs font-medium text-slate-600">{prod.trackStock ? `Stock: ${availableStock(prod)} unidades` : "Stock sin control"}</p>
           <p className="mt-0.5 truncate text-xs text-slate-500">{prod.description || "Sin descripción"}</p>
         </div>
       </div>
@@ -272,6 +277,9 @@ const ProductsView: React.FC = () => {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [priceInput, setPriceInput] = useState("");
+  const [stock, setStock] = useState(0);
+  const [trackStock, setTrackStock] = useState(false);
+  const originalInventoryRef = useRef<ReturnType<typeof inventorySnapshot> | null>(null);
   const [wholesalePriceInput, setWholesalePriceInput] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [categoryIds, setCategoryIds] = useState<string[]>([]);
@@ -313,6 +321,13 @@ const ProductsView: React.FC = () => {
   const [searchResults, setSearchResults] = useState<Product[]>([]);
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [allLoaded, setAllLoaded] = useState(false);
+  useInventorySync(supabase, storeId, [...products, ...allProducts, ...searchResults].map((p) => p.id), (rows) => {
+    setProducts((current) => current.map((p) => mergeInventory(p, rows)));
+    setAllProducts((current) => current.map((p) => mergeInventory(p, rows)));
+    setSearchResults((current) => current.map((p) => mergeInventory(p, rows)));
+    if (storeId) allProductsCache.delete(storeId);
+    pageCache = null;
+  });
 
   const importJsonRef = useRef<HTMLInputElement | null>(null);
   const prodsRefRef = useRef<ReturnType<typeof collection> | null>(null);
@@ -389,6 +404,8 @@ const ProductsView: React.FC = () => {
         discount: data.discount ?? null,
         description: data.description ?? "",
         price: Number(data.price ?? 0),
+        stock: Number(data.stock ?? 0),
+        trackStock: data.trackStock === true,
         wholesalePrice: data.wholesalePrice ?? null,
         categoryId: data.categoryId ?? data.categoryIds?.[0] ?? "",
         categoryIds: Array.from(new Set([...(data.categoryId ? [data.categoryId] : []), ...(data.categoryIds ?? [])])),
@@ -538,6 +555,7 @@ const ProductsView: React.FC = () => {
           Categoría: categoryMap.get(product.categoryId ?? "") ?? "",
           "ID Categoría": product.categoryId ?? "",
           Precio: Number(product.price ?? 0),
+          ...exportInventoryFields(product),
           "Precio formateado": formatCOP(Number(product.price ?? 0)),
           "Precio mayorista": product.wholesalePrice ?? "",
           "Tiene descuento": discount ? "Sí" : "No",
@@ -623,6 +641,8 @@ const ProductsView: React.FC = () => {
         Descripción: "Descripción opcional",
         Categoría: "General",
         Precio: 100000,
+        "Controlar stock": "Sí",
+        Stock: 10,
         "Precio mayorista": 80000,
         "Tiene descuento": "No",
         "Tipo descuento": "",
@@ -644,10 +664,13 @@ const ProductsView: React.FC = () => {
     const instructionsSheet = XLSX.utils.aoa_to_sheet([
       ["Campo", "Cómo usarlo"],
       ["ID", "Opcional. Úsalo para actualizar exactamente un producto exportado."],
+      ["Inventario original", "Consérvalo al editar un archivo exportado: evita reponer unidades vendidas desde su exportación. Si cambió el stock, exporta de nuevo antes de actualizar."],
       ["SKU", "Opcional. Si coincide con un producto existente, se actualiza."],
       ["Nombre", "Obligatorio. También se usa para encontrar productos existentes si no hay ID o SKU."],
       ["Categoría", "Se crea automáticamente si no existe."],
       ["Precio", "Obligatorio. Usa solo números, por ejemplo 100000."],
+      ["Controlar stock", "Sí o No. Stock activa el control si esta columna está vacía. Sin control permite vender sin límite."],
+      ["Stock", "Entero mayor o igual a 0. Vacío conserva el valor al actualizar. En productos con variantes, edita el stock dentro del JSON Variantes; Stock disponible es solo informativo."],
       ["Precio mayorista", "Opcional. Se muestra únicamente en el enlace mayorista. Déjalo vacío para usar el precio normal."],
       ["Envío contra entrega", "Escribe Sí o No. Si queda vacío, los productos nuevos lo tendrán habilitado y las actualizaciones no cambiarán el valor actual."],
       ["Visible en catálogo", "Escribe Sí o No. Si queda vacío, el producto se importará como activo."],
@@ -747,6 +770,8 @@ const ProductsView: React.FC = () => {
       Opciones: value("Opciones", "options"),
       Orden: value("Orden", "order"),
       Stock: value("Stock", "cantidad", "quantity"),
+      "Controlar stock": value("Controlar stock", "trackStock", "control de inventario"),
+      "Inventario original": value("Inventario original"),
     };
   };
 
@@ -877,6 +902,16 @@ const ProductsView: React.FC = () => {
 
       for (const row of rows) {
         const rowNumber = Number(row.__excelRowNumber ?? 0) || 0;
+        let inventoryFields: ReturnType<typeof parseInventoryFields>;
+        try {
+          inventoryFields = parseInventoryFields(row);
+          const rawVariants = String(row["Variantes"] ?? "").trim();
+          if (rawVariants) {
+            const parsed = JSON.parse(rawVariants);
+            if (!Array.isArray(parsed)) throw new Error("Variantes debe ser una lista JSON.");
+            parsed.forEach((variant) => parseStock(variant.stock ?? 0));
+          }
+        } catch (error) { registerSkippedRow(rowNumber, [(error as Error).message]); continue; }
         const excelId = String(row["ID"] ?? "").trim();
         const name = String(row["Nombre"] ?? "").trim();
         const skuValue = String(row["SKU"] ?? "").trim();
@@ -1043,8 +1078,7 @@ const ProductsView: React.FC = () => {
         if (hasOptionsValue || !isUpdatingExistingProduct) payload.options = options;
         if (hasVariantsValue || !isUpdatingExistingProduct) payload.variants = variants;
         if (hasIsActiveValue || !isUpdatingExistingProduct) payload.isActive = isActiveValue;
-        const stockRaw = row["Stock"];
-        if (String(stockRaw ?? "").trim() !== "") payload.stock = Math.max(0, parseNumberSafe(stockRaw));
+        Object.assign(payload, inventoryFields);
         if (row["Orden"] !== undefined && String(row["Orden"] ?? "").trim() !== "") {
           payload.order = parseNumberSafe(row["Orden"]);
         } else if (!isUpdatingExistingProduct) {
@@ -1052,10 +1086,12 @@ const ProductsView: React.FC = () => {
         }
 
         if (existingProduct) {
-          await saveProductViaApi({ ...existingProduct.data, ...payload }, existingProduct.id);
+          await saveProductViaApi({ ...existingProduct.data, ...payload,
+            expectedInventory: inventoryFields.expectedInventory ?? inventorySnapshot(existingProduct.data) }, existingProduct.id);
           importedProductIds.add(existingProduct.id);
           updated++;
         } else {
+          delete payload.expectedInventory;
           const newProductId = await saveProductViaApi({
             ...payload,
             wholesalePrice: hasWholesalePrice ? wholesalePrice : null,
@@ -1075,10 +1111,7 @@ const ProductsView: React.FC = () => {
       if (shouldReorderMissingProducts) {
         const productsNotInExcel = existingProducts.filter((p) => !importedProductIds.has(p.id));
         for (const [index, product] of productsNotInExcel.entries()) {
-          await saveProductViaApi(
-            { ...product.data, order: rows.length + index },
-            product.id,
-          );
+          await updateDoc(doc(db, "stores", storeId, "products", product.id), { order: rows.length + index });
         }
       }
 
@@ -1189,7 +1222,12 @@ const ProductsView: React.FC = () => {
     try {
       const optimizedFiles: File[] = [];
       for (const f of files) {
-        optimizedFiles.push(await compressImageFile(f));
+        setUploadProgress({ done: 0, total: files.length, currentName: `Preparando: ${f.name}` });
+        try {
+          optimizedFiles.push(await compressImageFile(f));
+        } catch (error) {
+          throw new Error(`No se pudo preparar la imagen "${f.name}". ${getErrorMessage(error, "El navegador no pudo leerla. Intenta con una imagen JPG, PNG o WebP.")}`);
+        }
       }
       const uploaded = await uploadImagesToR2({
         files: optimizedFiles,
@@ -1244,6 +1282,7 @@ const ProductsView: React.FC = () => {
   };
 
   const resetCreateForm = () => {
+    setStock(0); setTrackStock(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
     setName(""); setDescription(""); setPriceInput(""); setWholesalePriceInput(""); setCategoryId(""); setCategoryIds([]); setSku("");
     setHasDiscount(false); setDiscountType("percent"); setDiscountValueInput("");
@@ -1454,6 +1493,8 @@ const ProductsView: React.FC = () => {
       alert(pricingError);
       return;
     }
+    try { parseStock(stock); variants.forEach((variant) => parseStock(variant.stock ?? 0)); }
+    catch (error) { alert((error as Error).message); return; }
 
     if (planAccess.productLimit !== null) {
       const countSnap = await getCountFromServer(prodsRef);
@@ -1484,7 +1525,7 @@ const ProductsView: React.FC = () => {
       const newOrder = countSnap.data().count;
 
       await addDoc(prodsRef, {
-        name: cleanName, sku: cleanSku, description: description.trim(), price: bp, wholesalePrice, discount,
+        name: cleanName, sku: cleanSku, description: description.trim(), price: bp, wholesalePrice, discount, stock, trackStock,
         categoryId: categoryIds[0], categoryIds, images, videos, options: [], variants, isActive, allowsCashOnDelivery,
         order: newOrder,
         createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
@@ -1505,7 +1546,7 @@ const ProductsView: React.FC = () => {
         alert(limitMessage);
         return;
       }
-      const message = err instanceof Error ? err.message : "Error al guardar producto";
+      const message = getErrorMessage(err, "No se pudo completar el guardado. Intenta nuevamente.");
       alert(`Error al guardar producto: ${message}`);
     } finally {
       setIsSubmitting(false);
@@ -1573,6 +1614,7 @@ const ProductsView: React.FC = () => {
   };
 
   const openEdit = (p: Product) => {
+    originalInventoryRef.current = inventorySnapshot(p);
     originalEditMediaRef.current = {
       images: [...(p.images ?? [])],
       videos: [...(p.videos ?? [])],
@@ -1613,6 +1655,9 @@ const ProductsView: React.FC = () => {
         : null;
 
       const productChanges = {
+        stock: parseStock(editingProduct.stock ?? 0),
+        trackStock: editingProduct.trackStock === true,
+        expectedInventory: originalInventoryRef.current,
         name: editingProduct.name.trim(), sku: cleanSku,
         description: (editingProduct.description ?? "").trim(),
         price: bp, wholesalePrice, discount,
@@ -1645,7 +1690,7 @@ const ProductsView: React.FC = () => {
     } catch (err) {
       console.error(err);
       const limitMessage = getPlanLimitMessage(err);
-      const message = limitMessage || (err instanceof Error ? err.message : "Error desconocido");
+      const message = limitMessage || getErrorMessage(err, "No se pudo completar la actualizacion.");
       alert(`Error al actualizar producto: ${message}`);
     } finally {
       setIsSubmitting(false);
@@ -1834,6 +1879,8 @@ const ProductsView: React.FC = () => {
         await addDoc(prodsRef, {
           name: itemName, sku: null, description: htmlToPlainText(item.description),
           price, discount, categoryId: catId, images: [], videos: [], options: [], variants: [],
+          stock: item.quantity === undefined || String(item.quantity).trim() === "" ? 0 : parseStock(item.quantity),
+          trackStock: item.quantity !== undefined && String(item.quantity).trim() !== "",
           isActive, order: orderCounter++,
           createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
         });
@@ -2021,6 +2068,7 @@ const ProductsView: React.FC = () => {
               <input id="useVariants" type="checkbox" checked={useVariants} onChange={(e) => { setUseVariants(e.target.checked); if (!e.target.checked) setCreateVariants([]); }} />
               <label htmlFor="useVariants" className="text-sm text-gray-700">Este producto tiene variantes</label>
             </div>
+            <StockEditor enabled={trackStock} stock={stock} hasVariants={useVariants} onEnabledChange={setTrackStock} onStockChange={setStock} />
             {useVariants ? (<VariantsEditor variants={createVariants} onChange={setCreateVariants} />) : null}
 
             <div className="sticky bottom-0 flex gap-3 border-t bg-white pt-4">
@@ -2394,6 +2442,9 @@ const ProductsView: React.FC = () => {
                   <input id="editUseVariants" type="checkbox" checked={editUseVariants} onChange={(e) => { setEditUseVariants(e.target.checked); if (!e.target.checked) setEditingProduct({ ...editingProduct, variants: [] }); }} />
                   <label htmlFor="editUseVariants" className="text-sm text-gray-700">Este producto tiene variantes</label>
                 </div>
+                <StockEditor enabled={editingProduct.trackStock === true} stock={editingProduct.stock ?? 0} hasVariants={editUseVariants}
+                  onEnabledChange={(enabled) => setEditingProduct({ ...editingProduct, trackStock: enabled })}
+                  onStockChange={(value) => setEditingProduct({ ...editingProduct, stock: value })} />
                 {editUseVariants ? (<VariantsEditor variants={editingProduct.variants || []} onChange={(vars) => setEditingProduct({ ...editingProduct, variants: vars })} />) : null}
               </div>
 

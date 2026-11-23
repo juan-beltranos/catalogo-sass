@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
+import { parseStock } from "../helpers/inventory.js";
 import { getSubscriptionPlanLimits, type SubscriptionPlan } from "../helpers/subscriptionPlanLimits.js";
 
 type Env = Record<string, string | undefined>;
@@ -51,6 +52,13 @@ export async function saveProduct(
   }
   const basePrice = Number(product.price || 0);
   const variants = Array.isArray(product.variants) ? product.variants : [];
+  try {
+    if (product.stock !== undefined) parseStock(product.stock);
+    for (const variant of variants) parseStock(variant.stock ?? 0);
+    if (product.trackStock !== undefined && typeof product.trackStock !== "boolean") throw new Error("Control de stock inválido.");
+  } catch (error) {
+    return { ok: false, status: 400, error: error instanceof Error ? error.message : "Stock inválido." };
+  }
   if (!Number.isFinite(basePrice) || basePrice <= 0) {
     return { ok: false, status: 400, error: "El precio del producto debe ser mayor que cero." };
   }

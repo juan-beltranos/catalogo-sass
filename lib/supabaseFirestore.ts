@@ -273,6 +273,8 @@ const productBaseToApp = (row: any) => {
     categoryId,
     categoryIds,
     price: Number(row.base_price ?? 0),
+    stock: Number(row.stock ?? 0),
+    trackStock: row.track_stock === true,
     wholesalePrice: row.wholesale_price === null ? null : Number(row.wholesale_price),
     discount,
     isActive: row.is_active,
@@ -359,6 +361,7 @@ const appProductToDb = (data: any, storeId?: string) => {
   if ("isActive" in data) payload.is_active = data.isActive !== false;
   if ("allowsCashOnDelivery" in data) payload.allow_cash_on_delivery = data.allowsCashOnDelivery !== false;
   if ("stock" in data) payload.stock = Number(data.stock ?? 0);
+  if ("trackStock" in data) payload.track_stock = data.trackStock === true;
   if ("order" in data) payload.sort_order = data.order ?? 0;
   if ("createdAt" in data) payload.created_at = data.createdAt;
   if ("updatedAt" in data) payload.updated_at = data.updatedAt;

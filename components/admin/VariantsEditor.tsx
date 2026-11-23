@@ -2,7 +2,7 @@ import React from "react";
 import { parseCOP, formatCOP, getActiveCurrencyCode } from "@/helpers";
 import { Variant } from "@/types";
 
-const uid = () => Math.random().toString(36).slice(2, 10);
+const uid = () => crypto.randomUUID();
 
 type Props = {
     variants: Variant[];
@@ -148,9 +148,13 @@ const VariantsEditor: React.FC<Props> = ({ variants, onChange }) => {
                                             inputMode="numeric"
                                             className="w-full pl-9 pr-3 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-200"
                                             placeholder="0"
+                                            type="number"
+                                            min={0}
+                                            max={2147483647}
+                                            step={1}
                                             value={String(v.stock ?? 0)}
                                             onChange={(e) =>
-                                                updateVariant(idx, { stock: parseInt(e.target.value || "0", 10) })
+                                                updateVariant(idx, { stock: Number(e.target.value || "0") })
                                             }
                                         />
                                     </div>

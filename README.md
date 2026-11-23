@@ -256,6 +256,18 @@ una sola transacción.
 - [ ] Revisar que no existan llaves, tokens, contraseñas o datos personales en el historial.
 - [ ] Probar el despliegue en un entorno de staging.
 
+## Inventario de productos
+
+Disponible en todos los planes. Activa **Controlar stock** al crear o editar un producto. Sin variantes se usa el stock del producto; con variantes se usa el stock de cada variante y se muestra la suma disponible. Con el control activo, cero significa agotado; desactivado permite vender sin límite.
+
+Los pedidos descuentan inventario al registrarse, junto con el pedido, sus artículos y el cliente en una sola transacción. Cancelar o eliminar un pedido devuelve sus unidades una sola vez. Reactivarlo vuelve a comprobar y descontar las existencias. Los kits consumen las cantidades de sus componentes y requieren productos sin variantes. Los pedidos anteriores a la migración no modifican inventario retroactivamente.
+
+Excel incluye `Controlar stock`, `Stock`, `Stock disponible`, `Inventario original` y el stock de las variantes dentro de `Variantes`. Una celda Stock vacía conserva el valor existente; cero lo establece como agotado. Conserva `Inventario original` de los archivos exportados: si hubo ventas desde la exportación, se rechaza la actualización para evitar reponer unidades accidentalmente. Exporta de nuevo antes de repetirla. La plantilla incluye instrucciones. El catálogo y el administrador actualizan las existencias visibles cada 10 segundos y al volver a la pestaña; el servidor siempre valida el stock actual al registrar el pedido.
+
+Antes de desplegar esta versión, aplica `supabase/migrations/20261123135050_unified_product_inventory.sql` en el proyecto Supabase configurado por `VITE_PUBLIC_SUPABASE_URL`, mediante las migraciones o el editor SQL. Después despliega juntos el frontend y las API. No se debe desplegar el código nuevo antes de aplicar la migración. La función de pedidos solo permite ejecución con `service_role`; el navegador conserva la clave pública.
+
+Verificación local: `npm run test:inventory`, `npx tsc --noEmit` y `npm run build`. Las pruebas de inventario ejecutan la migración y las funciones en PostgreSQL local con PGlite, sin modificar datos de producción.
+
 ## Licencia
 
 InteliaSB, se reservan todos los derechos.

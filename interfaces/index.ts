@@ -2,6 +2,8 @@ import { CheckoutFieldConfig, CommerceRules, ImageItem, ProductOption, Variant, 
 
 export interface Product {
   id: string;
+  stock?: number;
+  trackStock?: boolean;
   name: string;
   sku?: string;
   description?: string;

@@ -6,7 +6,6 @@ import {
   onSnapshot,
   doc,
   updateDoc,
-  deleteDoc,
   where,
   getDocs,
   limit,
@@ -182,7 +181,13 @@ const OrdersView: React.FC = () => {
     if (!window.confirm("¿Eliminar este pedido de la base de datos?")) return;
 
     try {
-      await deleteDoc(doc(db, "stores", storeId, "orders", orderId));
+      const { data: sessionData } = await supabase.auth.getSession();
+      const response = await fetch("/api/order-status", {
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionData.session?.access_token || ""}` },
+        body: JSON.stringify({ storeId, orderId, action: "delete" }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "No se pudo eliminar el pedido.");
       setOrders((current) => current.filter((order) => order.id !== orderId));
       setSelectedOrder((current) => (current?.id === orderId ? null : current));
       await loadFirstOrdersPage();

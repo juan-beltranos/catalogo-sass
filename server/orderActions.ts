@@ -9,11 +9,6 @@ const client = (env: Env) => createClient(
   { auth: { persistSession: false, autoRefreshToken: false }, realtime: { transport: WebSocket as any } },
 );
 
-const missingColumn = (error: any, column: string) => {
-  const message = String(error?.message || "").toLowerCase();
-  return (error?.code === "PGRST204" || message.includes("schema cache")) && message.includes(`'${column.toLowerCase()}'`);
-};
-
 export async function createPublicOrder(input: any, env: Env = process.env) {
   const admin = client(env);
   const storeId = String(input.storeId || "");
@@ -23,6 +18,15 @@ export async function createPublicOrder(input: any, env: Env = process.env) {
   if (!order.id || !Array.isArray(order.items) || !order.items.length) {
     return { ok: false, status: 400, error: "Pedido incompleto." };
   }
+  if (order.items.some((item: any) => !Number.isSafeInteger(item.qty) || item.qty <= 0 || item.qty > 2147483647)) {
+    return { ok: false, status: 400, error: "Las cantidades deben ser números enteros mayores que cero." };
+  }
+  const { data: existingOrder } = await admin.from("orders")
+    .select("id,original_subtotal,discount,subtotal,shipping_cost,total,applied_rules").eq("id", order.id).eq("store_id", storeId).maybeSingle();
+  if (existingOrder) return { ok: true, status: 200, orderId: existingOrder.id, calculation: {
+    originalSubtotal: existingOrder.original_subtotal, discount: existingOrder.discount, subtotal: existingOrder.subtotal,
+    shippingCost: existingOrder.shipping_cost, total: existingOrder.total, appliedRules: existingOrder.applied_rules,
+  } };
   const configuredFields = Array.isArray(store.checkout_fields) ? store.checkout_fields : [];
   const answers = Array.isArray(order.customFields) ? order.customFields : [];
   const missingRequired = configuredFields.find((field: any) => field.enabled !== false && field.required === true &&
@@ -123,116 +127,55 @@ export async function createPublicOrder(input: any, env: Env = process.env) {
   order.total = calculated.total - couponDiscount;
   order.appliedRules = [...calculated.appliedRules, ...(appliedCoupon ? [{ id: appliedCoupon.couponId, name: `Cupón ${appliedCoupon.code}`, amount: couponDiscount, kind: "pricing" }] : [])];
 
-  const { data: existingOrder } = await admin.from("orders").select("id").eq("id", order.id).maybeSingle();
-  if (existingOrder) return { ok: true, status: 200, orderId: order.id };
-
-  const phone = String(order.customer?.phone || "").replace(/\D/g, "") || `9${String(order.id).replace(/\D/g, "").slice(-14).padStart(14, "0")}`;
-  const customerName = String(order.customer?.name || "").trim() || "Cliente sin nombre";
-  const customerAddress = String(order.customer?.address || "").trim();
-  const { data: existingClient, error: clientLookupError } = await admin
-    .from("clients").select("id,orders_count,total_spent").eq("store_id", storeId).eq("phone", phone).maybeSingle();
-  if (clientLookupError) return { ok: false, status: 400, error: clientLookupError.message };
-
-  let clientId = existingClient?.id;
-  let createdClient = false;
-  if (existingClient) {
-    const clientChanges: any = {
-      name: customerName, address: customerAddress, custom_fields: answers,
-      orders_count: Number(existingClient.orders_count || 0) + 1,
-      total_spent: Number(existingClient.total_spent || 0) + Number(order.total || 0),
-      last_order_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-    };
-    let { error } = await admin.from("clients").update(clientChanges).eq("id", existingClient.id);
-    if (missingColumn(error, "custom_fields")) {
-      delete clientChanges.custom_fields;
-      ({ error } = await admin.from("clients").update(clientChanges).eq("id", existingClient.id));
-    }
-    if (error) return { ok: false, status: 400, error: error.message };
-  } else {
-    const clientRow: any = {
-      store_id: storeId, name: customerName, phone, address: customerAddress, custom_fields: answers,
-      orders_count: 1, total_spent: Number(order.total || 0),
-      last_order_at: new Date().toISOString(), created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-    };
-    let { data: created, error } = await admin.from("clients").insert(clientRow).select("id").single();
-    if (missingColumn(error, "custom_fields")) {
-      delete clientRow.custom_fields;
-      ({ data: created, error } = await admin.from("clients").insert(clientRow).select("id").single());
-    }
-    if (error) return { ok: false, status: 400, error: error.message };
-    clientId = created!.id;
-    createdClient = true;
-  }
-
-  const rollbackClient = async () => {
-    if (!clientId) return;
-    if (createdClient) {
-      await admin.from("clients").delete().eq("id", clientId);
-      return;
-    }
-    await admin.from("clients").update({
-      orders_count: Number(existingClient?.orders_count || 0),
-      total_spent: Number(existingClient?.total_spent || 0),
-      updated_at: new Date().toISOString(),
-    }).eq("id", clientId);
-  };
-
-  const orderRow: any = {
-    id: order.id, store_id: storeId, client_id: clientId, status: "new", source: "whatsapp",
-    customer_name: customerName, customer_phone: phone, address: customerAddress,
-    delivery_method: order.shippingMethod || null, shipping_cost: Number(order.shippingCost || 0),
-    original_subtotal: Number(order.originalSubtotal || order.subtotal || 0), discount: Number(order.discount || 0),
-    subtotal: Number(order.subtotal || 0), total: Number(order.total || 0), applied_rules: order.appliedRules || [],
+  const phone = String(order.customer?.phone || "").replace(/\D/g, "") || ("9" + String(order.id).replace(/\D/g, "").slice(-14).padStart(14, "0"));
+  const orderRow = {
+    id: order.id, customer_name: String(order.customer?.name || "").trim() || "Cliente sin nombre",
+    customer_phone: phone, address: String(order.customer?.address || "").trim(),
+    customer_fields: answers, delivery_method: method,
+    shipping_cost: order.shippingCost, original_subtotal: order.originalSubtotal,
+    discount: order.discount, subtotal: order.subtotal, total: order.total, applied_rules: order.appliedRules,
     notes: String(order.notes || "").trim() || null,
-    created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
   };
-  let { error: orderError } = await admin.from("orders").insert(orderRow);
-  if (missingColumn(orderError, "notes")) {
-    delete orderRow.notes;
-    ({ error: orderError } = await admin.from("orders").insert(orderRow));
-  }
-  if (orderError) {
-    await rollbackClient();
-    return { ok: false, status: 400, error: orderError.message };
-  }
-
-  const itemRows = order.items.map((item: any) => ({
-    order_id: order.id, store_id: storeId, product_id: item.itemType === "kit" ? null : item.productId || null, kit_id: item.itemType === "kit" ? item.kitId : null,
+  const itemRows = canonicalItems.map((item: any) => ({
+    product_id: item.itemType === "kit" ? null : item.productId,
+    kit_id: item.itemType === "kit" ? item.kitId : null,
     variant_id: item.variantId || null, title: item.productName || "", sku: item.sku || null,
-    quantity: Number(item.qty || 1), unit_price: Number(item.unitPrice || 0), total: Number(item.subtotal || 0),
+    quantity: item.qty, unit_price: item.unitPrice, total: item.subtotal,
   }));
-  const { error: itemsError } = await admin.from("order_items").insert(itemRows);
-  if (itemsError) {
-    await admin.from("orders").delete().eq("id", order.id).eq("store_id", storeId);
-    await rollbackClient();
-    return { ok: false, status: 400, error: itemsError.message };
-  }
-
-  const fields = (order.customFields || []).filter((field: any) => field?.value).map((field: any) => ({
-    order_id: order.id, store_id: storeId, field_key: field.id || field.label,
-    label: field.label || "", value: String(field.value),
+  const fields = answers.filter((field: any) => field?.value).map((field: any) => ({
+    field_key: field.id || field.label, label: field.label || "", value: String(field.value),
   }));
-  if (fields.length) await admin.from("order_custom_fields").insert(fields);
-  if (appliedCoupon?.couponId) {
-    const { data: coupon } = await admin.from("coupons").select("used_count").eq("id", appliedCoupon.couponId).maybeSingle();
-    if (coupon) await admin.from("coupons").update({ used_count: Number(coupon.used_count || 0) + 1, updated_at: new Date().toISOString() }).eq("id", appliedCoupon.couponId);
-  }
+  const { error: saveError } = await admin.rpc("place_order_with_inventory", {
+    p_store_id: storeId, p_order: orderRow, p_items: itemRows, p_fields: fields,
+    p_coupon_id: appliedCoupon?.couponId || null,
+  });
+  if (saveError) return { ok: false, status: saveError.message.includes("Stock") ? 409 : 400, error: saveError.message };
+  const { data: saved } = await admin.from("orders")
+    .select("original_subtotal,discount,subtotal,shipping_cost,total,applied_rules")
+    .eq("id", order.id).eq("store_id", storeId).maybeSingle();
   return { ok: true, status: 200, orderId: order.id, calculation: {
-    originalSubtotal: order.originalSubtotal, discount: order.discount, subtotal: order.subtotal,
-    shippingCost: order.shippingCost, total: order.total, appliedRules: order.appliedRules,
+    originalSubtotal: saved?.original_subtotal ?? order.originalSubtotal, discount: saved?.discount ?? order.discount, subtotal: saved?.subtotal ?? order.subtotal,
+    shippingCost: saved?.shipping_cost ?? order.shippingCost, total: saved?.total ?? order.total, appliedRules: saved?.applied_rules ?? order.appliedRules,
   } };
 }
 
 export async function updateOrderStatus(input: any, authorization?: string, env: Env = process.env) {
   const admin = client(env);
-  const token = authorization?.replace(/^Bearer\s+/i, "");
-  const { data: authData } = await admin.auth.getUser(token || "");
-  if (!authData.user) return { ok: false, status: 401, error: "Sesión inválida." };
-  const allowed = new Set(["new", "confirmed", "preparing", "delivered", "cancelled"]);
-  if (!allowed.has(input.status)) return { ok: false, status: 400, error: "Estado inválido." };
+  const token = authorization?.replace(/^Bearer\s+/i, "").trim();
+  if (!token) return { ok: false, status: 401, error: "Sesión requerida." };
+  const { data: authData, error: authError } = await admin.auth.getUser(token);
+  if (authError || !authData.user) return { ok: false, status: 401, error: "Sesión inválida." };
   const { data: store } = await admin.from("stores").select("id").eq("id", input.storeId).eq("owner_id", authData.user.id).maybeSingle();
-  if (!store) return { ok: false, status: 403, error: "Sin acceso a la tienda." };
-  const { error } = await admin.from("orders").update({ status: input.status, updated_at: new Date().toISOString() })
-    .eq("id", input.orderId).eq("store_id", input.storeId);
-  return error ? { ok: false, status: 400, error: error.message } : { ok: true, status: 200 };
+  if (!store) return { ok: false, status: 403, error: "No tienes permiso para modificar este pedido." };
+  if (input.action === "delete") {
+    const { data, error } = await admin.from("orders").delete().eq("id", input.orderId).eq("store_id", store.id).select("id").maybeSingle();
+    if (error) return { ok: false, status: 409, error: error.message };
+    return data ? { ok: true, status: 200, orderId: data.id } : { ok: false, status: 404, error: "Pedido no encontrado." };
+  }
+  if (!["new", "confirmed", "preparing", "delivered", "cancelled"].includes(input.status)) return { ok: false, status: 400, error: "Estado inválido." };
+  const { data, error } = await admin.from("orders").update({ status: input.status, updated_at: new Date().toISOString() })
+    .eq("id", input.orderId).eq("store_id", store.id).select("id").maybeSingle();
+  if (error) return { ok: false, status: 409, error: error.message };
+  if (!data) return { ok: false, status: 404, error: "Pedido no encontrado." };
+  return { ok: true, status: 200, orderId: data.id };
 }

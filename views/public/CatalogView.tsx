@@ -46,6 +46,8 @@ import {
 import { evaluateCommerceRules } from "@/helpers/commerceRules";
 import { getCatalogShareUrl } from "@/helpers/catalogLinks";
 import { normalizeCheckoutFormFields } from "@/helpers/checkoutFields";
+import { availableStock } from "@/helpers/inventory";
+import { mergeInventory, useInventorySync, type InventoryRows } from "@/hooks/useInventorySync";
 
 const PAGE_SIZE = 20;
 type CatalogViewMode = "grid" | "list";
@@ -390,6 +392,9 @@ const CatalogView: React.FC = () => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [placingOrder, setPlacingOrder] = useState(false);
+  const pendingOrderRef = useRef<{ id: string; fingerprint: string } | null>(null);
+  const inventoryRowsRef = useRef<InventoryRows>(new Map());
+  const placingOrderRef = useRef(false);
   const [couponCode, setCouponCode] = useState("");
   const [couponResult, setCouponResult] = useState<{ code: string; discount: number } | null>(null);
   const [couponMessage, setCouponMessage] = useState("");
@@ -1003,16 +1008,41 @@ const CatalogView: React.FC = () => {
     fetchFirstPage(store.id, activeCategoryId);
   }, [store?.id, catalogUnavailableReason, activeCategoryId, fetchFirstPage]);
 
+  useInventorySync(publicSupabase, store?.id, [...products.map((p) => p.id), ...searchProducts.map((p) => p.id),
+    ...cart.filter((i) => i.itemType !== "kit").map((i) => i.productId), ...kits.flatMap((k) => k.items.map((i) => i.productId))], (rows) => {
+    inventoryRowsRef.current = rows;
+    setProducts((current) => current.map((p) => mergeInventory(p, rows)));
+    setSearchProducts((current) => current.map((p) => mergeInventory(p, rows)));
+    setProductModal((current) => ({ ...current, product: current.product ? mergeInventory(current.product, rows) : null }));
+    if (store) {
+      for (const cache of catalogCache.get(store.id)?.values() ?? []) cache.products = cache.products.map((p) => mergeInventory(p, rows));
+      const cachedSearch = searchProductsCache.get(store.id);
+      if (cachedSearch) searchProductsCache.set(store.id, cachedSearch.map((p) => mergeInventory(p, rows)));
+    }
+  });
+
+  const getKitMaxStock = (kit?: ProductKit) => {
+    if (!kit) return undefined;
+    let max: number | undefined;
+    for (const item of kit.items) {
+      const row = inventoryRowsRef.current.get(item.productId);
+      if (!row) continue;
+      if (row.variants.size > 0) return 0;
+      if (row.trackStock) max = Math.min(max ?? Infinity, Math.floor(row.stock / item.quantity));
+    }
+    return max;
+  };
   const getCartItemMaxStock = (item: CartItem) => {
-    if (item.itemType === "kit") return undefined;
+    if (item.itemType === "kit") return getKitMaxStock(kits.find((k) => k.id === item.kitId));
+    const row = inventoryRowsRef.current.get(item.productId);
+    if (row?.trackStock) return item.variantId ? row.variants.get(item.variantId) ?? 0 : row.stock;
     const prod = [...products, ...searchProducts].find((p) => p.id === item.productId);
-    const v = prod?.variants?.find((vv) => vv.id === item.variantId);
-    return v && typeof v.stock === "number" && v.stock > 0 ? v.stock : undefined;
+    return availableStock(prod, item.variantId);
   };
 
   const normalizeQuantity = (value: number, maxStock?: number) => {
     const qty = Number.isFinite(value) ? Math.floor(value) : 1;
-    if (maxStock !== undefined) return Math.min(Math.max(qty, 1), maxStock);
+    if (maxStock !== undefined) return Math.min(Math.max(qty, 1), Math.max(1, maxStock));
     return Math.max(qty, 1);
   };
 
@@ -1020,7 +1050,8 @@ const CatalogView: React.FC = () => {
     const baseUnitPrice = getBaseUnitPrice(prod, variant, isWholesaleCatalog);
     const unitPrice = getFinalUnitPrice(prod, variant, isWholesaleCatalog);
     if (!unitPrice) return;
-    const maxStock = variant && typeof variant.stock === "number" && variant.stock > 0 ? variant.stock : undefined;
+    const maxStock = availableStock(prod, variant?.id);
+    if (maxStock === 0) { alert("Este producto está agotado."); return; }
     const qtyToAdd = normalizeQuantity(quantity, maxStock);
     const item: CartItem = {
       productId: prod.id,
@@ -1055,13 +1086,15 @@ const CatalogView: React.FC = () => {
   };
 
   const addKitToCart = (kit: ProductKit) => {
+    const maxStock = getKitMaxStock(kit);
+    if (maxStock === 0) return alert("Este kit está agotado.");
     const item: CartItem = { productId: kit.id, kitId: kit.id, itemType: "kit", productName: kit.name,
       unitPrice: kit.price, originalUnitPrice: kit.compareAtPrice || undefined, qty: 1,
       imageUrl: kit.imageUrl || kit.items[0]?.imageUrl, allowsCashOnDelivery: true };
     setCart((current) => {
       const index = current.findIndex((entry) => entry.itemType === "kit" && entry.kitId === kit.id);
       if (index < 0) return [...current, item];
-      const next = [...current]; next[index] = { ...next[index], qty: next[index].qty + 1 }; return next;
+      const next = [...current]; next[index] = { ...next[index], qty: normalizeQuantity(next[index].qty + 1, maxStock) }; return next;
     });
   };
 
@@ -1105,6 +1138,7 @@ const CatalogView: React.FC = () => {
   };
 
   const placeOrder = async () => {
+    if (placingOrderRef.current) return;
     if (!store || catalogUnavailableReason) return;
     if (!cart.length) return;
     const fieldValue = (id: string) => ({
@@ -1139,6 +1173,7 @@ const CatalogView: React.FC = () => {
     }
 
     setPlacingOrder(true);
+    placingOrderRef.current = true;
     try {
       const resolveCartProduct = async (item: CartItem) => {
         if (item.itemType === "kit" && item.kitId) {
@@ -1196,91 +1231,7 @@ const CatalogView: React.FC = () => {
       }));
 
       let orderTotal = total; // ya incluye envío
-      const clientRef = doc(db, "stores", store.id, "clients", cleanPhone);
-      const orderRef = doc(collection(db, "stores", store.id, "orders"));
-
-      // Las escrituras públicas pasan por el backend del mismo dominio.
-      // Se conserva la transacción anterior como referencia, pero no se ejecuta.
-      if (false) await runTransaction(db, async (tx) => {
-        const productSnaps = resolvedProducts.map((entry) => entry!);
-
-        const clientSnap = await tx.get(clientRef);
-
-        const updates: { ref: any; data: any }[] = [];
-
-        for (const { item, ref, data } of productSnaps) {
-          if (item.variantId) {
-            const variants = data.variants || [];
-            const i = variants.findIndex((v: any) => v.id === item.variantId);
-            if (i === -1) throw new Error(`Variante no encontrada`);
-            const variant = variants[i];
-            if (typeof variant.stock === "number" && variant.stock >= item.qty) {
-              variants[i].stock = variant.stock - item.qty;
-              updates.push({ ref, data: { variants } });
-            }
-          } else {
-            if (typeof data.stock === "number" && data.stock >= item.qty) {
-              updates.push({
-                ref,
-                data: { stock: data.stock - item.qty },
-              });
-            }
-          }
-        }
-
-        updates.forEach((u) => {
-          tx.update(u.ref, u.data);
-        });
-
-        if (!clientSnap.exists()) {
-          tx.set(clientRef, {
-            name: cleanName,
-            phone: cleanPhone,
-            address: cleanAddress,
-            customFields,
-            notes: "",
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-            lastOrderAt: serverTimestamp(),
-            totalOrders: 1,
-            totalSpent: orderTotal,
-          });
-        } else {
-          tx.update(clientRef, {
-            name: cleanName,
-            address: cleanAddress,
-            customFields,
-            updatedAt: serverTimestamp(),
-            lastOrderAt: serverTimestamp(),
-            totalOrders: increment(1),
-            totalSpent: increment(orderTotal),
-          });
-        }
-
-        tx.set(orderRef, {
-          status: "new",
-          channel: "whatsapp",
-          clientId: cleanPhone,
-          customer: {
-            name: cleanName,
-            phone: cleanPhone,
-            address: cleanAddress,
-            customFields,
-          },
-          customFields,
-          notes: customerNotes.trim() || "",
-          customerType: isWholesaleCatalog ? "wholesale" : "retail",
-          items,
-        subtotal,
-        shippingMethod: selectedShipping ?? null,
-        shippingCost,
-        cashOnDeliveryEligible: cashOnDeliveryAvailable,
-        total: orderTotal,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-      });
-
+      const orderRef = { id: pendingOrderRef.current?.id || crypto.randomUUID() };
       const orderPayload = {
         id: orderRef.id,
         customer: { name: cleanName, phone: cleanPhone, address: cleanAddress },
@@ -1296,6 +1247,11 @@ const CatalogView: React.FC = () => {
         shippingCost,
         total: orderTotal,
       };
+      const fingerprint = JSON.stringify({ ...orderPayload, id: undefined });
+      if (pendingOrderRef.current?.fingerprint !== fingerprint) pendingOrderRef.current = { id: crypto.randomUUID(), fingerprint };
+      orderRef.id = pendingOrderRef.current.id;
+      orderPayload.id = orderRef.id;
+      placingOrderRef.current = true;
       const orderResponse = await fetch("/api/public-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1303,6 +1259,8 @@ const CatalogView: React.FC = () => {
       });
       const orderResult = await orderResponse.json().catch(() => ({}));
       if (!orderResponse.ok) {
+        if (orderResponse.status < 500) pendingOrderRef.current = null;
+        clearStoreCache(store.id);
         throw new Error(orderResult.error || "No se pudo registrar el pedido.");
       }
       const confirmed = orderResult.calculation || ruleSummary;
@@ -1356,6 +1314,9 @@ const CatalogView: React.FC = () => {
 
       const waUrl = buildWaLink(store.whatsapp, lines.join("\n"));
       clearCart();
+      pendingOrderRef.current = null;
+      clearStoreCache(store.id);
+      searchProductsCache.delete(store.id);
       setCustomFieldValues({});
       setCheckoutOpen(false);
       window.location.assign(waUrl);
@@ -1364,6 +1325,7 @@ const CatalogView: React.FC = () => {
       const message = e instanceof Error ? e.message : "No se pudo crear el pedido. Intenta de nuevo.";
       alert(message);
     } finally {
+      placingOrderRef.current = false;
       setPlacingOrder(false);
     }
   };
@@ -1783,7 +1745,7 @@ const CatalogView: React.FC = () => {
                   </div>
                   <div className="p-4 min-w-0 flex-1 flex flex-col"><div className="flex items-start justify-between gap-2"><h3 className="font-black text-gray-900 leading-tight">{kit.name}</h3>{saving > 0 && <span className="shrink-0 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-black px-2 py-1">AHORRA {formatCOP(saving)}</span>}</div>
                     <p className="text-xs text-gray-500 mt-2 line-clamp-2">{kit.description || kit.items.map(item => `${item.quantity}× ${item.productName}`).join(" · ")}</p>
-                    <div className="flex items-end justify-between gap-3 mt-auto pt-4"><div>{kit.compareAtPrice && kit.compareAtPrice > kit.price ? <div className="text-xs text-gray-400 line-through font-bold">{formatCOP(kit.compareAtPrice)}</div> : null}<div className="text-lg font-black" style={{color:brandColor}}>{formatCOP(kit.price)}</div></div><button type="button" onClick={()=>addKitToCart(kit)} className="rounded-xl px-4 py-2.5 text-white text-sm font-extrabold hover:opacity-90 active:scale-95" style={{background:brandColor}}><i className="fa-solid fa-cart-plus mr-2"/>Agregar</button></div>
+                    <div className="flex items-end justify-between gap-3 mt-auto pt-4"><div>{kit.compareAtPrice && kit.compareAtPrice > kit.price ? <div className="text-xs text-gray-400 line-through font-bold">{formatCOP(kit.compareAtPrice)}</div> : null}<div className="text-lg font-black" style={{color:brandColor}}>{formatCOP(kit.price)}</div></div><button type="button" onClick={()=>addKitToCart(kit)} disabled={getKitMaxStock(kit) === 0} className="rounded-xl px-4 py-2.5 text-white text-sm font-extrabold hover:opacity-90 active:scale-95" style={{background:brandColor}}><i className="fa-solid fa-cart-plus mr-2"/>{getKitMaxStock(kit) === 0 ? "Agotado" : "Agregar"}</button></div>
                   </div>
                 </article>;
               })}
@@ -1913,11 +1875,13 @@ const CatalogView: React.FC = () => {
                           {prod.variants?.length} variantes
                         </div>
                       ) : null}
+                      {availableStock(prod) === 0 && <p className="mt-1 text-xs font-bold text-red-600">Agotado</p>}
                       </div>
 
                       <button
                         type="button"
                         onClick={() => openAddFlow(prod)}
+                        disabled={availableStock(prod) === 0}
                         className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-white shadow-lg transition hover:scale-105 hover:opacity-90 active:scale-95 sm:h-12 sm:w-12"
                         style={{ background: brandColor, boxShadow: `0 8px 18px ${brandColor}38` }}
                         aria-label={hasVariants ? `Elegir variante de ${prod.name}` : `Añadir ${prod.name} al carrito`}
@@ -2065,7 +2029,7 @@ const CatalogView: React.FC = () => {
                   <div className="text-sm font-extrabold text-gray-900">Variantes</div>
                   <div className="grid grid-cols-1 gap-2">
                     {(productModal.product.variants || []).map((v) => {
-                      const outOfStock = false;
+                      const outOfStock = availableStock(productModal.product, v.id) === 0;
                       const selected = productModal.selectedVariantId === v.id;
                       const base = getBaseUnitPrice(productModal.product, v, isWholesaleCatalog);
                       const final = getFinalUnitPrice(productModal.product, v, isWholesaleCatalog);
@@ -2073,11 +2037,12 @@ const CatalogView: React.FC = () => {
                         <button
                           key={v.id}
                           type="button"
+                          disabled={outOfStock}
                           onClick={() =>
                             setProductModal((pm) => ({
                               ...pm,
                               selectedVariantId: v.id,
-                              quantity: normalizeQuantity(pm.quantity, typeof v.stock === "number" && v.stock > 0 ? v.stock : undefined),
+                              quantity: normalizeQuantity(pm.quantity, availableStock(pm.product, v.id)),
                             }))
                           }
                           className={`w-full rounded-2xl p-4 border flex items-center justify-between text-left transition
@@ -2090,6 +2055,7 @@ const CatalogView: React.FC = () => {
                         >
                           <div>
                             <div className="font-extrabold text-gray-900">{v.title}</div>
+                            {outOfStock && <div className="text-xs text-red-600">Agotado</div>}
                           </div>
                           <div className="font-extrabold">
                             {!isWholesaleCatalog && hasValidDiscount(productModal.product) ? (
@@ -2114,10 +2080,7 @@ const CatalogView: React.FC = () => {
                 const selectedVariant = (productModal.product?.variants || []).find(
                   (v) => v.id === productModal.selectedVariantId,
                 );
-                const maxStock =
-                  selectedVariant && typeof selectedVariant.stock === "number" && selectedVariant.stock > 0
-                    ? selectedVariant.stock
-                    : undefined;
+                const maxStock = availableStock(productModal.product, selectedVariant?.id);
 
                 return (
                   <div className="space-y-2">
@@ -2126,6 +2089,7 @@ const CatalogView: React.FC = () => {
                       className="text-sm font-extrabold text-gray-900"
                     >
                       Cantidad
+                      {maxStock !== undefined && <span className="ml-2 text-xs text-gray-500">{maxStock === 0 ? "Agotado" : `${maxStock} disponibles`}</span>}
                     </label>
                     <div className="flex items-center gap-2">
                       <button
@@ -2197,6 +2161,7 @@ const CatalogView: React.FC = () => {
                   }
                   closeProductModal();
                 }}
+                disabled={availableStock(productModal.product, productModal.selectedVariantId) === 0}
                 className="w-full rounded-2xl px-3 py-3 font-extrabold text-white hover:opacity-90"
                 style={{ background: brandColor }}
               >
