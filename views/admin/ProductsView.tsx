@@ -86,7 +86,11 @@ const CategoryMultiSelect: React.FC<{
           </label>
         ))}
       </div>
-      {!categories.length ? <p className="text-xs text-amber-600">Crea una categoría antes de guardar el producto.</p> : null}
+      {!categories.length ? (
+        <p className="text-xs text-gray-500">Puedes guardar el producto sin categoría y asignarla después.</p>
+      ) : (
+        <p className="text-xs text-gray-500">La categoría es opcional y se puede cambiar después.</p>
+      )}
     </fieldset>
   );
 };
@@ -667,7 +671,7 @@ const ProductsView: React.FC = () => {
       ["Inventario original", "Consérvalo al editar un archivo exportado: evita reponer unidades vendidas desde su exportación. Si cambió el stock, exporta de nuevo antes de actualizar."],
       ["SKU", "Opcional. Si coincide con un producto existente, se actualiza."],
       ["Nombre", "Obligatorio. También se usa para encontrar productos existentes si no hay ID o SKU."],
-      ["Categoría", "Se crea automáticamente si no existe."],
+      ["Categoría", "Opcional. Si la escribes y no existe, se crea automáticamente. También puedes asignarla después."],
       ["Precio", "Obligatorio. Usa solo números, por ejemplo 100000."],
       ["Controlar stock", "Sí o No. Stock activa el control si esta columna está vacía. Sin control permite vender sin límite."],
       ["Stock", "Entero mayor o igual a 0. Vacío conserva el valor al actualizar. En productos con variantes, edita el stock dentro del JSON Variantes; Stock disponible es solo informativo."],
@@ -978,7 +982,6 @@ const ProductsView: React.FC = () => {
         const invalidFields: string[] = [];
         if (!isUpdatingExistingProduct) {
           if (!name) invalidFields.push("Nombre");
-          if (!finalCategoryId) invalidFields.push("Categoria");
           if (!hasPriceValue) invalidFields.push("Precio");
           else if (price <= 0) invalidFields.push("Precio mayor que 0");
         } else if (hasPriceValue && price <= 0) {
@@ -1486,7 +1489,7 @@ const ProductsView: React.FC = () => {
     if (isSubmitting) return;
     const cleanName = name.trim();
     const bp = parseCOP(priceInput);
-    if (!cleanName || !categoryIds.length || !bp) return;
+    if (!cleanName || !bp) return;
     const variants = useVariants ? (createVariants || []) : [];
     const pricingError = validateProductPricing(bp, variants, hasDiscount, discountType, discountValueNum);
     if (pricingError) {
@@ -1526,7 +1529,7 @@ const ProductsView: React.FC = () => {
 
       await saveProductViaApi({
         name: cleanName, sku: cleanSku, description: description.trim(), price: bp, wholesalePrice, discount, stock, trackStock,
-        categoryId: categoryIds[0], categoryIds, images, videos, options: [], variants, isActive, allowsCashOnDelivery,
+        categoryId: categoryIds[0] ?? "", categoryIds, images, videos, options: [], variants, isActive, allowsCashOnDelivery,
         order: newOrder,
         createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       });
