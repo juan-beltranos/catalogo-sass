@@ -1143,12 +1143,6 @@ export const deleteDoc = async (ref: DocRef) => {
     if (error) throw error;
     return;
   }
-  if (ref.table === "products") {
-    for (const table of ["product_images", "product_videos", "product_options", "product_variants"]) {
-      const { error } = await supabase.from(table).delete().eq("product_id", ref.id);
-      if (error) throw error;
-    }
-  }
   const { error } = await applyBaseFilters(supabase.from(ref.table).delete(), ref).eq("id", ref.id);
   if (error) throw error;
 };

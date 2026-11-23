@@ -1524,11 +1524,11 @@ const ProductsView: React.FC = () => {
       const countSnap = await getCountFromServer(prodsRef);
       const newOrder = countSnap.data().count;
 
-      await addDoc(prodsRef, {
+      await saveProductViaApi({
         name: cleanName, sku: cleanSku, description: description.trim(), price: bp, wholesalePrice, discount, stock, trackStock,
         categoryId: categoryIds[0], categoryIds, images, videos, options: [], variants, isActive, allowsCashOnDelivery,
         order: newOrder,
-        createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       });
 
       pageCache = null;
@@ -1557,14 +1557,27 @@ const ProductsView: React.FC = () => {
     if (!storeId) return;
     if (!window.confirm("¿Eliminar producto?")) return;
     try {
-      await deleteProductMediaFromR2([prod]);
       await deleteDoc(doc(db, "stores", storeId, "products", prod.id));
+      await deleteProductMediaFromR2([prod]);
+
+      // La eliminacion ya termino en Supabase. Retira la tarjeta de todas las
+      // vistas locales antes de volver a consultar para que ninguna cache ni la
+      // sincronizacion periodica de inventario conserve el producto eliminado.
+      setProducts((current) => current.filter((product) => product.id !== prod.id));
+      setAllProducts((current) => current.filter((product) => product.id !== prod.id));
+      setSearchResults((current) => current.filter((product) => product.id !== prod.id));
+      setProductCount((current) => Math.max(0, current - 1));
+      pageCache = null;
+      allProductsCache.delete(storeId);
       setOrderingMode(false);
       await loadFirstPage();
-      if (allLoaded) await reloadAllProducts();
+      if (allLoaded || categoryFilter || search) await reloadAllProducts();
     } catch (err) {
       console.error(err);
-      alert("Error al eliminar producto");
+      const message = getErrorMessage(err, "Intenta nuevamente.");
+      alert(message.includes("product_kit_items_product_id_fkey")
+        ? "Este producto pertenece a uno o más kits. Retíralo de esos kits antes de eliminarlo."
+        : `Error al eliminar producto: ${message}`);
     }
   };
 

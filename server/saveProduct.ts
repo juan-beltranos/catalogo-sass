@@ -45,7 +45,9 @@ export async function saveProduct(
   if (userError || !userData.user) return { ok: false, status: 401, error: "La sesion expiro." };
 
   const storeId = String(input.storeId || "");
-  const productId = String(input.productId || randomUUID());
+  const requestedProductId = String(input.productId || "");
+  const productId = requestedProductId || randomUUID();
+  const isNewProduct = !requestedProductId;
   const product = input.product || {};
   if (!storeId || !productPayload(product).name) {
     return { ok: false, status: 400, error: "Faltan datos del producto." };
@@ -120,9 +122,32 @@ export async function saveProduct(
     p_images: images,
     p_videos: videos,
     p_options: product.options ?? [],
-    p_variants: product.variants ?? [],
+    // En altas no hay variantes anteriores que sincronizar. Insertarlas abajo
+    // evita el DELETE + escaneo completo que agotaba statement_timeout.
+    p_variants: isNewProduct && variants.length ? null : variants,
   });
   if (saveError) return { ok: false, status: 400, error: saveError.message };
+
+  if (isNewProduct && variants.length) {
+    const variantRows = variants.map((variant: any) => ({
+      id: String(variant.id || randomUUID()),
+      product_id: productId,
+      store_id: storeId,
+      title: String(variant.title || ""),
+      sku: String(variant.sku || "").trim() || null,
+      price: Number(variant.price || 0),
+      stock: Number(variant.stock || 0),
+      option_values: Array.isArray(variant.optionValues) ? variant.optionValues : [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }));
+    const { error: variantsError } = await client.from("product_variants").insert(variantRows);
+    if (variantsError) {
+      // El alta no debe quedar visible a medias si falla una variante.
+      await client.from("products").delete().eq("id", productId).eq("store_id", storeId);
+      return { ok: false, status: 400, error: variantsError.message };
+    }
+  }
 
   return { ok: true, status: 200, productId };
 }

@@ -36,7 +36,11 @@ export function useInventorySync(client: any, storeId: string | null | undefined
       finally { loading = false; }
     };
     void refresh();
-    const timer = window.setInterval(refresh, 10000);
+    // Un sondeo cada 10 segundos multiplicaba el egress y los logs por cada
+    // visitante del catálogo. Un minuto mantiene el inventario razonablemente
+    // fresco; al volver a la pestaña o enfocarla se actualiza de inmediato y el
+    // checkout vuelve a validar existencias antes de confirmar el pedido.
+    const timer = window.setInterval(refresh, 60000);
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
     return () => { active = false; window.clearInterval(timer); window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh); };
