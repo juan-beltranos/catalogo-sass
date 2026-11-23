@@ -53,6 +53,7 @@ try {
   await db.query("insert into products(id,store_id,name,base_price,stock) values($1,$3,'Simple',100,10),($2,$3,'Variantes',100,0)", [product, variantProduct, store]);
   await db.query("insert into product_variants(id,product_id,store_id,title,stock) values($1,$2,$3,'Rojo',5)", [variant, variantProduct, store]);
   await db.exec(await fs.readFile(new URL("../supabase/migrations/20261123135050_unified_product_inventory.sql", import.meta.url), "utf8"));
+  await db.exec(await fs.readFile(new URL("../supabase/migrations/20261123203000_scale_product_variant_sync.sql", import.meta.url), "utf8"));
   await db.exec("grant usage on schema public,auth to service_role; grant all on all tables in schema public to service_role;");
   await check("migración activa inventarios existentes con unidades", async () => {
     assert.equal(await scalar("select count(*)::int from products where track_stock"), 2);
@@ -118,6 +119,12 @@ try {
   const saveProduct = (p) => db.query("select save_product_full($1,$2,$3,'[]','[]','[]',$4)", [variantProduct,store,p,p.variants]);
   await saveProduct({name:"Editado",price:100,stock:0,trackStock:true,expectedInventory:expected,variants:[{id:variant,title:"Rojo",price:100,stock:5}]});
   await check("edición conserva identificador de variante", async () => assert.equal(await scalar("select id::text from product_variants"),variant));
+  const manyVariants = Array.from({length: 500}, (_, index) => ({title:`Variante ${index + 1}`,price:100 + index,stock:index,optionValues:[String(index + 1)]}));
+  await db.query("select sync_product_children($1,$2,null,null,null,$3)", [variantProduct,store,manyVariants]);
+  await check("sincroniza cientos de variantes en una operacion", async () => {
+    assert.equal(await scalar("select count(*)::int from product_variants where product_id=$1", [variantProduct]), 500);
+  });
+  await db.query("select sync_product_children($1,$2,null,null,null,$3)", [variantProduct,store,[{id:variant,title:"Rojo",price:100,stock:5}]]);
   await place([item(variantProduct,1,variant)]);
   await check("formulario obsoleto no sobrescribe unidades vendidas", async () => {
     await assert.rejects(saveProduct({name:"Obsoleto",price:100,stock:0,trackStock:true,expectedInventory:expected,variants:[{id:variant,title:"Rojo",price:100,stock:5}]}), /inventario cambió/);
