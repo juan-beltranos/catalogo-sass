@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import StockEditor from "@/components/admin/StockEditor";
+import ImportProgress, { initialImportStatus, type ImportStatus } from "@/components/admin/ImportProgress";
 import { availableStock, exportInventoryFields, inventorySnapshot, parseInventoryFields, parseStock } from "@/helpers/inventory";
 import { mergeInventory, useInventorySync } from "@/hooks/useInventorySync";
 import {
@@ -276,6 +277,10 @@ const ProductsView: React.FC = () => {
 
   const importExcelRef = useRef<HTMLInputElement | null>(null);
   const [importingExcel, setImportingExcel] = useState(false);
+  const [importProgress, setImportProgress] = useState<ImportStatus | null>(null);
+  const importBusyRef = useRef(false);
+  const updateImportProgress = (patch: Partial<ImportStatus>) =>
+    setImportProgress((current) => current ? { ...current, ...patch } : current);
 
   // Create form
   const [name, setName] = useState("");
@@ -331,7 +336,7 @@ const ProductsView: React.FC = () => {
     setSearchResults((current) => current.map((p) => mergeInventory(p, rows)));
     if (storeId) allProductsCache.delete(storeId);
     pageCache = null;
-  });
+  }, false);
 
   const importJsonRef = useRef<HTMLInputElement | null>(null);
   const prodsRefRef = useRef<ReturnType<typeof collection> | null>(null);
@@ -814,6 +819,9 @@ const ProductsView: React.FC = () => {
       return;
     }
 
+    if (importBusyRef.current) return;
+    importBusyRef.current = true;
+    setImportProgress(initialImportStatus());
     setImportingExcel(true);
 
     try {
@@ -834,6 +842,7 @@ const ProductsView: React.FC = () => {
       }));
 
       if (!rows.length) {
+        setImportProgress(null);
         alert("El Excel no tiene productos para importar.");
         return;
       }
@@ -841,6 +850,7 @@ const ProductsView: React.FC = () => {
       // ─────────────────────────────────────────────
       // Productos existentes para relacionar/actualizar
       // ─────────────────────────────────────────────
+      updateImportProgress({ total: rows.length, stage: "Buscando productos y categorías existentes…" });
       const productsSnap = await getDocs(prodsRef);
 
       const existingProducts = productsSnap.docs.map((d) => ({
@@ -895,6 +905,7 @@ const ProductsView: React.FC = () => {
 
       const registerSkippedRow = (rowNumber: number, fields: string[]) => {
         skipped++;
+        updateImportProgress({ skipped });
         skippedDetails.push({ rowNumber, fields });
         fields.forEach((field) => {
           skippedFieldCounts.set(field, (skippedFieldCounts.get(field) ?? 0) + 1);
@@ -905,6 +916,7 @@ const ProductsView: React.FC = () => {
       let importOrderCounter = 0;
 
       for (const row of rows) {
+        updateImportProgress({ stage: `Guardando producto ${created + updated + skipped + 1} de ${rows.length}: ${String(row["Nombre"] || row["SKU"] || row["ID"] || "sin nombre")}` });
         const rowNumber = Number(row.__excelRowNumber ?? 0) || 0;
         let inventoryFields: ReturnType<typeof parseInventoryFields>;
         try {
@@ -1093,6 +1105,7 @@ const ProductsView: React.FC = () => {
             expectedInventory: inventoryFields.expectedInventory ?? inventorySnapshot(existingProduct.data) }, existingProduct.id);
           importedProductIds.add(existingProduct.id);
           updated++;
+          updateImportProgress({ updated });
         } else {
           delete payload.expectedInventory;
           const newProductId = await saveProductViaApi({
@@ -1104,9 +1117,11 @@ const ProductsView: React.FC = () => {
           });
           importedProductIds.add(newProductId);
           created++;
+          updateImportProgress({ created });
         }
       }
 
+      updateImportProgress({ stage: "Finalizando: organizando productos y actualizando la lista…" });
       const shouldReorderMissingProducts =
         rows.length >= existingProducts.length &&
         rows.some((row) => String(row["Orden"] ?? "").trim() !== "");
@@ -1118,6 +1133,8 @@ const ProductsView: React.FC = () => {
         }
       }
 
+      pageCache = null;
+      allProductsCache.delete(storeId);
       setOrderingMode(false);
       await loadFirstPage();
 
@@ -1147,14 +1164,19 @@ const ProductsView: React.FC = () => {
         ].join("\n")
         : "";
 
-      alert(
-        `Importación completada.\nActualizados: ${updated}\nCreados: ${created}\nCategorías creadas: ${createdCategories}\nOmitidos: ${skipped}${skippedSummary}`
-      );
+      updateImportProgress({ status: "done", stage: "Todos los productos del archivo fueron procesados.",
+        detail: `Categorías creadas: ${createdCategories}${skippedSummary}` });
     } catch (error) {
       console.error("Error importando Excel:", error);
       const message = error instanceof Error ? error.message : String((error as any)?.message || "");
-      alert(getPlanLimitMessage(error) || `No se pudo importar el Excel: ${message || "revisa que tenga el mismo formato exportado."}`);
+      setImportProgress((current) => current ? { ...current, status: "error", stage: "No se pudo completar la importación.",
+        detail: `${current.stage}\n${getPlanLimitMessage(error) || message || "Revisa que el archivo tenga el mismo formato exportado."}` } : current);
+      pageCache = null;
+      allProductsCache.delete(storeId);
+      setAllLoaded(false);
+      await loadFirstPage().catch(console.error);
     } finally {
+      importBusyRef.current = false;
       setImportingExcel(false);
     }
   };
@@ -1861,35 +1883,40 @@ const ProductsView: React.FC = () => {
 
   const handleImportJsonFile = async (file: File) => {
     if (!storeId || !prodsRef || !catsRef) { alert("La tienda aún no está lista."); return; }
+    if (importBusyRef.current) return;
+    importBusyRef.current = true;
+    setImportProgress(initialImportStatus());
     setIsSubmitting(true);
     try {
       const text = await file.text();
       let parsed: any;
-      try { parsed = JSON.parse(text); } catch { alert("El archivo no es un JSON válido."); return; }
+      try { parsed = JSON.parse(text); } catch { throw new Error("El archivo no es un JSON válido."); }
       const items: ImportedJsonProduct[] = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.products) ? parsed.products : [];
-      if (!items.length) { alert("No encontré productos."); return; }
+      if (!items.length) throw new Error("No encontré productos.");
 
       if (planAccess.productLimit !== null) {
         const countSnap = await getCountFromServer(prodsRef);
         const currentTotal = countSnap.data().count;
         const available = planAccess.productLimit - currentTotal;
-        if (available <= 0) { alert(`Has alcanzado el límite de ${planAccess.productLimit} productos.`); return; }
+        if (available <= 0) throw new Error(`Has alcanzado el límite de ${planAccess.productLimit} productos.`);
         if (items.length > available) {
           const ok = window.confirm(`Solo puedes importar ${available} más. ¿Continuar?`);
-          if (!ok) return;
+          if (!ok) { setImportProgress(null); return; }
           items.splice(available);
         }
       }
 
+      updateImportProgress({ total: items.length, stage: "Preparando categorías…" });
       let imported = 0, skipped = 0;
       const categoryMap = new Map<string, string>();
       const countSnap = await getCountFromServer(prodsRef);
       let orderCounter = countSnap.data().count;
 
       for (const item of items) {
+        updateImportProgress({ stage: `Guardando producto ${imported + skipped + 1} de ${items.length}: ${String(item.name || "sin nombre")}` });
         const itemName = String(item.name ?? "").trim();
         const price = parseNumberSafe(item.price);
-        if (!itemName || price <= 0) { skipped++; continue; }
+        if (!itemName || price <= 0) { skipped++; updateImportProgress({ skipped }); continue; }
         const catId = await getOrCreateCategoryId(item.category ?? "", categoryMap);
         const discount = buildDiscount(price, item.originalPrice ?? item.oldPrice ?? item.compareAtPrice);
         await addDoc(prodsRef, {
@@ -1901,17 +1928,27 @@ const ProductsView: React.FC = () => {
           createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
         });
         imported++;
+        updateImportProgress({ created: imported });
       }
 
+      updateImportProgress({ stage: "Finalizando: actualizando la lista de productos…" });
+      pageCache = null;
+      allProductsCache.delete(storeId);
       setOrderingMode(false);
       await loadFirstPage();
       if (allLoaded) await reloadAllProducts();
       if (importJsonRef.current) importJsonRef.current.value = "";
-      alert(`Importación completada. Importados: ${imported}. Omitidos: ${skipped}.`);
+      updateImportProgress({ status: "done", stage: "Todos los productos del archivo fueron procesados." });
     } catch (error) {
       console.error(error);
-      alert(getPlanLimitMessage(error) || "Error importando el JSON.");
+      setImportProgress((current) => current ? { ...current, status: "error", stage: "No se pudo completar la importación.",
+        detail: `${current.stage}\n${getPlanLimitMessage(error) || getErrorMessage(error, "Error importando el JSON.")}` } : current);
+      pageCache = null;
+      allProductsCache.delete(storeId);
+      setAllLoaded(false);
+      await loadFirstPage().catch(console.error);
     } finally {
+      importBusyRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -1945,6 +1982,7 @@ const ProductsView: React.FC = () => {
 
   return (
     <div className="space-y-8">
+      {importProgress && <ImportProgress progress={importProgress} onClose={() => setImportProgress(null)} />}
       {sharedProductId ? (
         <div className="fixed left-1/2 top-4 z-[100] -translate-x-1/2 rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-lg">
           ¡Enlace del producto copiado!

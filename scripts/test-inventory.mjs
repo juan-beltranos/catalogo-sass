@@ -163,5 +163,30 @@ try {
     assert.equal(helper.parseInventoryFields({Stock:5,'Controlar stock':'No'}).trackStock,false);
     assert.throws(()=>helper.parseInventoryFields({'Controlar stock':'quizás'}));
   });
+  await check("reactiva productos ocultos con inventario real, con y sin control y con variantes", async () => {
+    for (const tracked of [false, true]) {
+      for (const pid of [product, variantProduct]) {
+        await db.query("update products set is_active=false,stock=7,track_stock=$2 where id=$1", [pid, tracked]);
+        const row = (await db.query(`select p.*, coalesce((select jsonb_agg(jsonb_build_object('id',v.id,'stock',v.stock))
+          from product_variants v where v.product_id=p.id),'[]') as product_variants from products p where p.id=$1`, [pid])).rows[0];
+        const adminInventory = helper.syncedInventory(row, false);
+        assert.equal(adminInventory.stock, 7);
+        assert.equal(adminInventory.trackStock, tracked);
+        const publicInventory = helper.syncedInventory(row);
+        assert.equal(publicInventory.stock, 0);
+        assert.equal(publicInventory.trackStock, true);
+        const variants = row.product_variants.map(v => ({id:v.id,stock:adminInventory.variants.get(v.id),title:'Rojo',price:100}));
+        const snapshot = helper.inventorySnapshot({...adminInventory, variants});
+        await db.query("select save_product_full($1,$2,$3,'[]','[]','[]',$4)", [pid,store,
+          {name:'Visible nuevamente',price:100,isActive:true,stock:adminInventory.stock,trackStock:tracked,expectedInventory:snapshot},variants]);
+        assert.equal(await scalar("select is_active from products where id=$1",[pid]),true);
+        assert.equal(await stock(pid),7);
+        if (variants.length) {
+          assert.equal(variants[0].stock,4);
+          assert.equal(publicInventory.variants.get(variants[0].id),0);
+        }
+      }
+    }
+  });
   console.log(`${passed} comprobaciones correctas.`);
 } finally { await db.close(); }

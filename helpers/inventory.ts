@@ -16,6 +16,17 @@ type StockProduct = {
   variants?: { id: string; stock?: number }[];
 };
 
+/** Public catalogs hide availability; administration must retain the stored inventory. */
+export function syncedInventory(row: any, inactiveAsUnavailable = true) {
+  const unavailable = inactiveAsUnavailable && row.is_active === false;
+  return {
+    stock: unavailable ? 0 : Number(row.stock ?? 0),
+    trackStock: unavailable || row.track_stock === true,
+    variants: new Map<string, number>((row.product_variants ?? []).map((variant: any) =>
+      [variant.id, unavailable ? 0 : Number(variant.stock ?? 0)])),
+  };
+}
+
 export function availableStock(product?: StockProduct | null, variantId?: string | null): number | undefined {
   if (!product?.trackStock) return undefined;
   if (product.variants?.length) {
