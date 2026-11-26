@@ -1771,7 +1771,7 @@ const CatalogView: React.FC = () => {
             {filteredProducts.map((prod) => {
               const img = getProductMainImage(prod);
               const imgOptim = img
-                ? cldImg(img, { w: 600, h: 600, crop: "fill" })
+                ? cldImg(img, { w: 600, h: 600, crop: "fit" })
                 : "";
               const hasVariants = (prod.variants?.length ?? 0) > 0;
               const discOk = !isWholesaleCatalog && hasValidDiscount(prod);
@@ -1786,17 +1786,28 @@ const CatalogView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => openAddFlow(prod)}
-                    className={`relative shrink-0 overflow-hidden bg-white text-left ${viewMode === "grid" ? "aspect-[4/3] w-full sm:aspect-square" : "w-[38%] min-w-[8.5rem] sm:w-56"}`}
+                    className={`relative isolate shrink-0 overflow-hidden bg-slate-50 text-left ${viewMode === "grid" ? "aspect-[4/3] w-full sm:aspect-square" : "w-[38%] min-w-[8.5rem] sm:w-56"}`}
                     aria-label={`Ver ${prod.name}`}
                   >
                     {img ? (
-                      <img
-                        src={imgOptim}
-                        alt={prod.name}
-                        className={`z-10 object-contain transition duration-500 group-hover:scale-[1.03] ${viewMode === "grid" ? "absolute inset-0 m-auto h-[90%] w-[90%]" : "relative h-full w-full"}`}
-                        loading="lazy"
-                        decoding="async"
-                      />
+                      <>
+                        {/* Only the decorative backdrop fills the frame; the product stays complete. */}
+                        <img
+                          src={imgOptim}
+                          alt=""
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover opacity-30 blur-xl"
+                          loading="lazy"
+                          decoding="async"
+                        />
+                        <img
+                          src={imgOptim}
+                          alt={prod.name}
+                          className="pointer-events-none absolute inset-0 z-10 h-full w-full object-contain"
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      </>
                     ) : (
                       <div className="h-full w-full flex flex-col items-center justify-center gap-2 px-3 text-center text-gray-400">
                         <i className="fa-solid fa-burger text-3xl opacity-30" />
