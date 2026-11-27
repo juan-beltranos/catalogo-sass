@@ -34,6 +34,7 @@ import {
   norm,
 } from "@/helpers";
 import { buildInternationalPhone, formatStoreCurrency, resolveStoreCountryCode } from "@/helpers/latamCountries";
+import { CatalogHeader } from "@/components/catalog/CatalogHeader";
 import { ImageCarousel } from "@/components/catalog/ImageCarousel";
 import { cldImg } from "@/helpers/r2Upload";
 import {
@@ -434,7 +435,6 @@ const CatalogView: React.FC = () => {
   const [searchProducts, setSearchProducts] = useState<Product[]>([]);
   const [searchLoaded, setSearchLoaded] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [locationTooltipOpen, setLocationTooltipOpen] = useState(false);
 
   const isSearching = search.trim().length > 0;
 
@@ -1390,13 +1390,6 @@ const CatalogView: React.FC = () => {
   };
 
   const brandColor = (store as any)?.brandColor || "#111111";
-  const bannerUrl = (store as any)?.bannerUrl || "";
-  const instagram = (store as any)?.instagram || "";
-  const facebook = (store as any)?.facebook || "";
-  const email = (store as any)?.email || "";
-  const phone = (store as any)?.phone || "";
-  const location = (store as any)?.location || "";
-  const description = (store as any)?.description || store?.address || "";
 
   if (loading)
     return <div className="h-screen bg-white" aria-label="Preparando catálogo" />;
@@ -1422,202 +1415,23 @@ const CatalogView: React.FC = () => {
       )}
 
       {/* ── Hero ── */}
-      <div className="relative">
-        {bannerUrl ? (
-          <div className="w-full h-40 sm:h-52 overflow-hidden bg-gray-200">
-            <img
-              src={bannerUrl}
-              alt={`Banner ${store.name}`}
-              className="w-full h-full object-cover"
-            />
-            <div className="absolute inset-0 h-40 sm:h-52 bg-gradient-to-t from-black/50 to-transparent" />
-          </div>
-        ) : (
-          <div
-            className="w-full h-24 sm:h-32"
-            style={{ background: brandColor, opacity: 0.15 }}
-          />
-        )}
-
-        <div
-          className={`relative max-w-6xl mx-auto px-4 ${bannerUrl ? "-mt-10" : "-mt-4"}`}
-        >
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-5">
-            <div className="flex items-start gap-4">
-              <div className="shrink-0 -mt-10 sm:-mt-12">
-                {store.logoUrl ? (
-                  <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-2xl bg-white border-2 border-white shadow-md overflow-hidden">
-                    <img
-                      src={store.logoUrl}
-                      alt={`Logo ${store.name}`}
-                      className="h-full w-full object-cover"
-                    />
-                  </div>
-                ) : (
-                  <div
-                    className="h-16 w-16 sm:h-20 sm:w-20 rounded-2xl border-2 border-white shadow-md flex items-center justify-center font-black text-2xl text-white"
-                    style={{ background: brandColor }}
-                  >
-                    {(store.name || "T").trim().slice(0, 1).toUpperCase()}
-                  </div>
-                )}
-              </div>
-
-              <div className="flex-1 min-w-0 pt-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="font-extrabold text-lg sm:text-2xl text-gray-900 leading-tight truncate">
-                    {store.name}
-                  </h1>
-                  {store.isActive ? (
-                    <span className="inline-flex items-center gap-1 text-xs font-bold text-green-700 bg-green-50 border border-green-200 rounded-full px-2.5 py-0.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
-                      Abierto
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 text-xs font-bold text-red-600 bg-red-50 border border-red-200 rounded-full px-2.5 py-0.5">
-                      <i className="fa-solid fa-circle-xmark text-[10px]" />
-                      Cerrado en este momento
-                    </span>
-                  )}
-                  {isWholesaleCatalog ? (
-                    <span className="inline-flex items-center gap-1 text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-full px-2.5 py-0.5">
-                      <i className="fa-solid fa-tags text-[10px]" />
-                      Catálogo mayorista
-                    </span>
-                  ) : null}
-                </div>
-
-                {description ? (
-                  <p className="text-sm text-gray-500 mt-1 line-clamp-2">
-                    {description}
-                  </p>
-                ) : null}
-
-                <div className="flex flex-wrap items-center gap-3 mt-2">
-                  {instagram ? (
-                    <a
-                      href={`https://instagram.com/${instagram}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1 text-xs text-gray-500 hover:text-pink-600 transition"
-                    >
-                      <i className="fa-brands fa-instagram text-sm" />
-                      <span className="hidden sm:inline">@{instagram}</span>
-                    </a>
-                  ) : null}
-
-                  {facebook ? (
-                    <a
-                      href={`https://facebook.com/${facebook}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1 text-xs text-gray-500 hover:text-blue-600 transition"
-                    >
-                      <i className="fa-brands fa-facebook text-sm" />
-                      <span className="hidden sm:inline">{facebook}</span>
-                    </a>
-                  ) : null}
-
-                  {store.whatsapp ? (
-                    <a
-                      href={`https://wa.me/${store.whatsapp}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1 text-xs text-gray-500 hover:text-green-600 transition"
-                    >
-                      <i className="fa-brands fa-whatsapp text-sm" />
-                      <span className="hidden sm:inline">
-                        +{store.whatsapp}
-                      </span>
-                    </a>
-                  ) : null}
-
-                  {email ? (
-                    <a
-                      href={`mailto:${email}`}
-                      className="flex items-center gap-1 text-xs text-gray-500 hover:text-indigo-600 transition"
-                    >
-                      <i className="fa-regular fa-envelope text-sm" />
-                      <span className="hidden sm:inline">{email}</span>
-                    </a>
-                  ) : null}
-
-                  {phone ? (
-                    <a
-                      href={`tel:${phone}`}
-                      className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 transition"
-                    >
-                      <i className="fa-solid fa-phone text-sm" />
-                      <span className="hidden sm:inline">{phone}</span>
-                    </a>
-                  ) : null}
-
-                  {location ? (
-                    <div className="relative">
-                      <button
-                        type="button"
-                        onClick={() => setLocationTooltipOpen((prev) => !prev)}
-                        onBlur={() =>
-                          setTimeout(() => setLocationTooltipOpen(false), 150)
-                        }
-                        className="flex items-center gap-1 text-xs text-gray-500 hover:text-red-500 transition"
-                        aria-label="Ver ubicación"
-                        title={location}
-                      >
-                        <i className="fa-solid fa-location-dot text-sm text-red-400" />
-                        <span className="hidden sm:inline">{location}</span>
-                      </button>
-
-                      {locationTooltipOpen ? (
-                        <div className="sm:hidden absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 w-56 rounded-xl bg-gray-900 px-3 py-2 text-xs font-semibold text-white shadow-lg">
-                          {location}
-                          <span className="absolute -top-1 left-1/2 -translate-x-1/2 h-2 w-2 rotate-45 bg-gray-900" />
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="flex flex-col sm:flex-row items-end gap-2 shrink-0">
-                <button
-                  onClick={handleShare}
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition"
-                >
-                  <i className="fa-solid fa-share-nodes" />
-                  <span className="hidden sm:inline">Compartir</span>
-                </button>
-
-                <button
-                  onClick={() => setCheckoutOpen(true)}
-                  className="relative inline-flex items-center gap-2 rounded-xl px-4 py-2 font-extrabold shadow-sm text-sm text-white transition hover:opacity-90 active:scale-[0.99]"
-                  style={{ background: brandColor }}
-                >
-                  <i className="fa-solid fa-cart-shopping" />
-                  <span className="hidden sm:inline">Carrito</span>
-                  {cart.length > 0 ? (
-                    <span
-                      className="inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-white text-[10px] font-black"
-                      style={{ color: brandColor }}
-                    >
-                      {cart.reduce((a, b) => a + b.qty, 0)}
-                    </span>
-                  ) : null}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <CatalogHeader
+        store={store}
+        wholesale={isWholesaleCatalog}
+        cartCount={cart.reduce((total, item) => total + item.qty, 0)}
+        onShare={handleShare}
+        onCart={() => setCheckoutOpen(true)}
+      />
 
       {/* ── Categories bar ── */}
-      <div className="sticky top-0 z-30 border-b border-gray-200/70 bg-[#f7f8fb]/95 backdrop-blur-xl mt-3">
+      <div className="sticky top-0 z-30 border-b border-gray-200/70 bg-[#f7f8fb]/95 backdrop-blur-xl mt-4">
         <div className="max-w-6xl mx-auto px-3 sm:px-4 py-3">
-          <div className="rounded-2xl bg-[#eceff5] p-1.5 shadow-inner shadow-gray-200/40">
-              <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-1.5 shadow-[0_4px_20px_rgba(15,23,42,0.03)]">
+              <div className="catalog-category-scroll flex items-center gap-1.5 overflow-x-auto">
             <button
               type="button"
               onClick={() => handleCategoryChange("all")}
+              aria-pressed={activeCategoryId === "all"}
               className="shrink-0 px-4 py-2.5 rounded-xl text-sm font-extrabold transition-all"
               style={
                 activeCategoryId === "all"
@@ -1625,7 +1439,8 @@ const CatalogView: React.FC = () => {
                   : { color: "#64748b" }
               }
             >
-              Inicio
+              <i className="fa-solid fa-store mr-2 text-xs" aria-hidden="true" />
+              Ver todo
             </button>
 
             {categories.map((cat) => (
@@ -1633,6 +1448,7 @@ const CatalogView: React.FC = () => {
                 key={cat.id}
                 type="button"
                 onClick={() => handleCategoryChange(cat.id)}
+                aria-pressed={activeCategoryId === cat.id}
                 className="shrink-0 px-4 py-2.5 rounded-xl text-sm font-extrabold transition-all"
                 style={
                   activeCategoryId === cat.id
@@ -1650,13 +1466,15 @@ const CatalogView: React.FC = () => {
 
       {/* ── Content ── */}
       <main className="max-w-6xl mx-auto px-3 sm:px-4 py-5 sm:py-6 space-y-5">
-        <div className="relative">
+        <div className="catalog-search relative">
           <i className="fa-solid fa-magnifying-glass absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar en todo el catálogo..."
-            className="w-full h-14 sm:h-16 pl-12 pr-12 rounded-2xl sm:rounded-3xl border border-gray-200 bg-white text-[15px] shadow-sm placeholder:text-slate-400 focus:outline-none focus:ring-2"
+            placeholder="?Qu? est?s buscando hoy?"
+            aria-label="Buscar en todo el cat?logo"
+            type="search"
+            className="w-full h-14 sm:h-16 pl-12 pr-12 rounded-2xl border border-slate-200 bg-white text-[15px] shadow-[0_4px_24px_rgba(15,23,42,0.04)] placeholder:text-slate-400 focus:outline-none focus:ring-2"
             style={{ "--tw-ring-color": brandColor + "55" } as any}
           />
           {search.trim() ? (

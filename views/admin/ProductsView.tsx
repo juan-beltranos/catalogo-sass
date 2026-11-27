@@ -323,6 +323,8 @@ const ProductsView: React.FC = () => {
 
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
+  const [visibilityFilter, setVisibilityFilter] = useState<"all" | "visible" | "hidden">("all");
+  const [adminNameOrder, setAdminNameOrder] = useState<"catalog" | "asc" | "desc">("catalog");
   const [categoryOrderIds, setCategoryOrderIds] = useState<string[]>([]);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -1212,8 +1214,8 @@ const ProductsView: React.FC = () => {
   }, [debouncedSearch, storeId, prodsRef, allLoaded, loadAllProductsOnce, filterLocal]);
 
   useEffect(() => {
-    if (categoryFilter && !allLoaded) loadAllProductsOnce();
-  }, [categoryFilter, allLoaded, loadAllProductsOnce]);
+    if ((categoryFilter || visibilityFilter !== "all" || adminNameOrder !== "catalog") && !allLoaded) loadAllProductsOnce();
+  }, [categoryFilter, visibilityFilter, adminNameOrder, allLoaded, loadAllProductsOnce]);
 
   useEffect(() => {
     let active = true;
@@ -1955,8 +1957,11 @@ const ProductsView: React.FC = () => {
 
   if (!storeId) return <div className="p-8 text-center">Buscando configuración de tienda...</div>;
 
-  const baseList = search ? searchResults : (orderingMode || categoryFilter) ? allProducts : products;
-  const listToRender = categoryFilter
+  const needsAllProducts = orderingMode || Boolean(categoryFilter) || visibilityFilter !== "all" || adminNameOrder !== "catalog";
+  const sourceList = search ? searchResults : needsAllProducts ? allProducts : products;
+  const baseList = sourceList.filter((product) => visibilityFilter === "all"
+    || (visibilityFilter === "hidden" ? product.isActive === false : product.isActive !== false));
+  const catalogOrderedList = categoryFilter
     ? (() => {
       const categoryProducts = baseList.filter((product) => (product.categoryIds?.length ? product.categoryIds : [product.categoryId]).includes(categoryFilter));
       if (sortByNewest) {
@@ -1976,8 +1981,11 @@ const ProductsView: React.FC = () => {
     : sortByNewest
       ? [...baseList].sort((a, b) => getProductCreatedAtMillis(b) - getProductCreatedAtMillis(a))
       : baseList;
-  const canReorder = !search && !sortByNewest && (orderingMode || Boolean(categoryFilter));
-  const isShowingFullOrder = orderingMode || Boolean(categoryFilter);
+  const listToRender = adminNameOrder === "catalog" ? catalogOrderedList : [...catalogOrderedList].sort((a, b) => {
+    const comparison = String(a.name || "").localeCompare(String(b.name || ""), "es", { sensitivity: "base", numeric: true });
+    return (adminNameOrder === "asc" ? comparison : -comparison) || a.id.localeCompare(b.id);
+  });
+  const canReorder = !search && !sortByNewest && visibilityFilter === "all" && adminNameOrder === "catalog" && (orderingMode || Boolean(categoryFilter));
   const categoryNameById = new Map(categories.map((category) => [category.id, category.name]));
 
   return (
@@ -2148,20 +2156,41 @@ const ProductsView: React.FC = () => {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 disabled={orderingMode}
-                placeholder="Buscar por nombre, SKU o descripción..."
+                aria-label="Buscar productos, incluidos los ocultos"
+                placeholder="Buscar por nombre, marca, SKU o descripción..."
                 className="w-full p-2 border rounded disabled:bg-slate-100 disabled:text-slate-400"
               />
 
               <div className="flex flex-wrap gap-2 md:col-span-2">
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  Visibilidad
+                  <select value={visibilityFilter} disabled={orderingMode}
+                    onChange={(event) => setVisibilityFilter(event.target.value as typeof visibilityFilter)}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 disabled:opacity-50">
+                    <option value="all">Todos: visibles y ocultos</option>
+                    <option value="visible">Solo visibles</option>
+                    <option value="hidden">Solo ocultos</option>
+                  </select>
+                </label>
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  Orden de revisión
+                  <select value={adminNameOrder} disabled={orderingMode}
+                    onChange={(event) => setAdminNameOrder(event.target.value as typeof adminNameOrder)}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 disabled:opacity-50">
+                    <option value="catalog">Orden del catálogo</option>
+                    <option value="asc">Nombre: A a Z</option>
+                    <option value="desc">Nombre: Z a A</option>
+                  </select>
+                </label>
                 <label className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium ${sortByNewest ? "border-indigo-200 bg-indigo-50 text-indigo-700" : "border-slate-200 bg-white text-slate-700"}`}>
-                  <input type="checkbox" checked={sortByNewest} disabled={savingSortPreference || orderingMode}
+                  <input type="checkbox" checked={sortByNewest} disabled={savingSortPreference || orderingMode || adminNameOrder !== "catalog"}
                     onChange={(event) => handleSortByNewestChange(event.target.checked)} />
                   Más recientes primero
                 </label>
                 <button
                   type="button"
                   onClick={orderingMode ? exitOrderingMode : enterOrderingMode}
-                  disabled={loadingOrderingMode || savingOrder || sortByNewest}
+                  disabled={loadingOrderingMode || savingOrder || sortByNewest || visibilityFilter !== "all" || adminNameOrder !== "catalog"}
                   className={`px-3 py-2 rounded text-sm font-semibold disabled:opacity-50 whitespace-nowrap ${orderingMode ? "bg-slate-900 text-white hover:bg-slate-800" : "bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-50"}`}
                   title={sortByNewest ? "Desactiva mÃ¡s recientes primero para ordenar manualmente" : "Cargar todos los productos para ordenarlos sin paginaciÃ³n"}
                 >
@@ -2182,10 +2211,10 @@ const ProductsView: React.FC = () => {
                     </>
                   )}
                 </button>
-                {search ? (
+                {search || categoryFilter || visibilityFilter !== "all" || adminNameOrder !== "catalog" ? (
                   <button
                     type="button"
-                    onClick={() => setSearch("")}
+                    onClick={() => { setSearch(""); setCategoryFilter(""); setVisibilityFilter("all"); setAdminNameOrder("catalog"); }}
                     className="px-3 py-2 border rounded text-sm"
                   >
                     Limpiar
@@ -2259,9 +2288,10 @@ const ProductsView: React.FC = () => {
                 </button>
               </div>
             </div>
-            {search ? (
+            <p className="text-xs text-slate-500">La búsqueda incluye productos ocultos y agotados. Puedes buscar la marca si está en el nombre, la descripción o la categoría. El orden de revisión por nombre solo cambia esta vista.</p>
+            {search || needsAllProducts ? (
               <div className="mt-2 text-xs text-gray-500">
-                {searching ? "Cargando productos para búsqueda..." : `Resultados: ${searchResults.length}`}
+                {searching ? "Cargando productos..." : `Resultados: ${listToRender.length}`}
                 {!allLoaded && !searching ? " (cargando cache...)" : ""}
               </div>
             ) : null}
@@ -2283,7 +2313,7 @@ const ProductsView: React.FC = () => {
             )}
 
             {/* Hint de drag & drop (solo cuando no se busca) */}
-            {!search && !loading && listToRender.length > 1 && (canReorder || sortByNewest) && (
+            {!search && !loading && listToRender.length > 1 && (canReorder || (sortByNewest && adminNameOrder === "catalog")) && (
               <div className="mt-2 flex items-center gap-1.5 text-xs text-gray-400">
                 <i className={`fa-solid ${canReorder ? "fa-grip-lines" : "fa-lock"}`} />
                 {sortByNewest ? "Orden manual bloqueado mientras se muestran los más recientes primero" : "Arrastra las tarjetas para cambiar el orden en el catálogo"}
@@ -2291,7 +2321,7 @@ const ProductsView: React.FC = () => {
             )}
           </div>
 
-          {loading ? (
+          {loading || (needsAllProducts && !allLoaded) || searching ? (
             <div className="p-10 text-center text-gray-500">Cargando...</div>
           ) : (
             <div className="w-full overflow-x-auto">
@@ -2350,14 +2380,14 @@ const ProductsView: React.FC = () => {
 
                   {!listToRender.length ? (
                     <div className="col-span-full px-6 py-12 text-center text-gray-400">
-                        Aún no hay productos.
+                        No hay productos que coincidan con los filtros.
                     </div>
                   ) : null}
               </div>
                 </SortableContext>
               </DndContext>
 
-              {!search && !categoryFilter && !orderingMode ? (
+              {!search && !needsAllProducts ? (
                 <Paginator page={page} hasNext={hasNext} hasPrev={page > 1} loading={loadingPage} onNext={goNext} onPrev={goPrev} />
               ) : null}
             </div>
