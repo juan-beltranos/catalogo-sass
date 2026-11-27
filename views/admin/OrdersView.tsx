@@ -3,7 +3,6 @@ import {
   collection,
   query,
   orderBy,
-  onSnapshot,
   doc,
   updateDoc,
   where,
@@ -11,9 +10,7 @@ import {
   limit,
   QueryDocumentSnapshot,
   DocumentData,
-  startAfter,
-  endBefore,
-  limitToLast,
+  offset,
 } from "@/lib/supabaseFirestore";
 import { db, supabase } from "@/lib/supabase";
 import { getStoreForOwner } from "@/lib/storeLookup";
@@ -78,15 +75,6 @@ const OrdersView: React.FC = () => {
   const [hasNext, setHasNext] = useState(false);
   const [loadingPage, setLoadingPage] = useState(false);
 
-  const [pageFirstDoc, setPageFirstDoc] =
-    useState<QueryDocumentSnapshot<DocumentData> | null>(null);
-  const [pageLastDoc, setPageLastDoc] =
-    useState<QueryDocumentSnapshot<DocumentData> | null>(null);
-
-  const [history, setHistory] = useState<QueryDocumentSnapshot<DocumentData>[]>(
-    [],
-  );
-
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [filterStatus, setFilterStatus] = useState<OrderStatus | "all">("all");
 
@@ -115,12 +103,9 @@ const OrdersView: React.FC = () => {
 
     setLoading(true);
     setPage(1);
-    setHistory([]);
-    setPageFirstDoc(null);
-    setPageLastDoc(null);
     setHasNext(false);
 
-    loadOrdersPage("first", filterStatus);
+    loadOrdersPage(1, filterStatus);
   }, [storeId, filterStatus]);
 
   const counters = useMemo(() => {
@@ -245,7 +230,7 @@ const OrdersView: React.FC = () => {
   };
 
   const loadOrdersPage = async (
-    mode: "first" | "next" | "prev",
+    targetPage: number,
     status: OrderStatus | "all",
   ) => {
     if (!storeId) return;
@@ -260,28 +245,15 @@ const OrdersView: React.FC = () => {
 
       let qBase =
         status === "all"
-          ? query(baseRef, orderBy("createdAt", "desc"))
+          ? query(baseRef, orderBy("createdAt", "desc"), orderBy("id", "desc"))
           : query(
               baseRef,
               where("status", "==", status),
               orderBy("createdAt", "desc"),
+              orderBy("id", "desc"),
             );
 
-      if (mode === "next") {
-        if (!pageLastDoc) return;
-        qBase = query(qBase, startAfter(pageLastDoc));
-      }
-
-      if (mode === "prev") {
-        if (!pageFirstDoc) return;
-        qBase = query(
-          qBase,
-          endBefore(pageFirstDoc),
-          limitToLast(PAGE_SIZE + 1),
-        );
-      } else {
-        qBase = query(qBase, limit(PAGE_SIZE + 1));
-      }
+      qBase = query(qBase, limit(PAGE_SIZE + 1), offset((targetPage - 1) * PAGE_SIZE));
 
       const snap = await getDocs(qBase);
 
@@ -293,8 +265,7 @@ const OrdersView: React.FC = () => {
 
       setOrders(pageDocs.map(mapDocToOrder));
       setHasNext(nextExists);
-      setPageFirstDoc(pageDocs[0] ?? null);
-      setPageLastDoc(pageDocs[pageDocs.length - 1] ?? null);
+      setPage(targetPage);
     } catch (err) {
       console.error("Error loading orders page:", err);
     } finally {
@@ -306,23 +277,17 @@ const OrdersView: React.FC = () => {
   };
 
   const loadFirstOrdersPage = async () => {
-    setPage(1);
-    setHistory([]);
-    await loadOrdersPage("first", filterStatus);
+    await loadOrdersPage(1, filterStatus);
   };
 
   const goNextOrders = async () => {
     if (!hasNext || loadingPage) return;
-    if (pageFirstDoc) setHistory((h) => [...h, pageFirstDoc]);
-    setPage((p) => p + 1);
-    await loadOrdersPage("next", filterStatus);
+    await loadOrdersPage(page + 1, filterStatus);
   };
 
   const goPrevOrders = async () => {
-    if (history.length === 0 || loadingPage) return;
-    setHistory((h) => h.slice(0, -1));
-    setPage((p) => Math.max(1, p - 1));
-    await loadOrdersPage("prev", filterStatus);
+    if (page <= 1 || loadingPage) return;
+    await loadOrdersPage(page - 1, filterStatus);
   };
 
   // Helper: método de envío de un pedido
@@ -681,7 +646,7 @@ const OrdersView: React.FC = () => {
             <Paginator
               page={page}
               hasNext={hasNext}
-              hasPrev={history.length > 0}
+              hasPrev={page > 1}
               loading={loadingPage}
               onNext={goNextOrders}
               onPrev={goPrevOrders}

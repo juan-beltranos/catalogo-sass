@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test:inventory": "node scripts/test-inventory.mjs",
+    "test:egress": "node scripts/test-egress-optimizations.mjs",
     "test:subscription": "node --env-file=.env.local scripts/test-subscription-flow.mjs"
   },
   "dependencies": {

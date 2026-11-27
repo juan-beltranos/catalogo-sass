@@ -48,7 +48,8 @@ import { evaluateCommerceRules } from "@/helpers/commerceRules";
 import { getCatalogShareUrl } from "@/helpers/catalogLinks";
 import { normalizeCheckoutFormFields } from "@/helpers/checkoutFields";
 import { availableStock } from "@/helpers/inventory";
-import { mergeInventory, useInventorySync, type InventoryRows } from "@/hooks/useInventorySync";
+import { mergeInventory, mergeInventoryList, useInventorySync, type InventoryRows } from "@/hooks/useInventorySync";
+import { AsyncReadCache } from "@/lib/asyncReadCache";
 
 const PAGE_SIZE = 20;
 type CatalogViewMode = "grid" | "list";
@@ -76,7 +77,7 @@ const setCategoryCache = (
 const clearStoreCache = (storeId: string) => {
   catalogCache.delete(storeId);
 };
-const searchProductsCache = new Map<string, Product[]>();
+const searchProductsCache = new AsyncReadCache<string, Product[]>();
 
 const readableQueryError = (error: any, fallback: string) => {
   const parts = [error?.message, error?.details, error?.hint]
@@ -784,33 +785,34 @@ const CatalogView: React.FC = () => {
     setActiveCategoryId(exists ? categoryFromUrl : "all");
   }, [categories, categoryFromUrl]);
 
-  const fetchSearchProducts = useCallback(async (storeId: string) => {
-    const term = search.trim();
-    if (!term) {
-      setSearchProducts([]);
-      setSearchLoaded(false);
-      return;
-    }
-
+  const fetchSearchProducts = useCallback(async (storeId: string, isCurrent: () => boolean) => {
     if (searchProductsCache.has(storeId)) {
       setSearchProducts(searchProductsCache.get(storeId)!);
       setSearchLoaded(true);
+      setSearchLoading(false);
       return;
     }
     setSearchLoading(true);
     setSearchLoaded(false);
     setQueryError(null);
     try {
-      const baseRef = collection(publicSupabase, "stores", storeId, "products");
-      const snap = await getDocs(baseRef);
-      const allProducts = sortProducts(snap.docs.map((d) => ({
-        id: d.id,
-        ...(d.data() as any),
-      })) as Product[]);
-      searchProductsCache.set(storeId, allProducts);
-      setSearchProducts(allProducts);
+      await searchProductsCache.getOrLoad(storeId, async () => {
+        const baseRef = collection(publicSupabase, "stores", storeId, "products");
+        // Hidden products were already excluded from results in filteredProducts.
+        const snap = await getDocs(query(baseRef, where("isActive", "==", true)));
+        return sortProducts(snap.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as any),
+        })) as Product[]);
+      });
+      if (!isCurrent()) return;
+      // Inventory may have refreshed the cached objects while this read settled.
+      const currentProducts = searchProductsCache.get(storeId);
+      if (!currentProducts) return;
+      setSearchProducts(currentProducts);
       setSearchLoaded(true);
     } catch (e: any) {
+      if (!isCurrent()) return;
       console.error("fetchSearchProducts error:", e);
       setQueryError(
         "Error cargando productos para búsqueda. Revisa la consola.",
@@ -818,9 +820,9 @@ const CatalogView: React.FC = () => {
       setSearchProducts([]);
       setSearchLoaded(true);
     } finally {
-      setSearchLoading(false);
+      if (isCurrent()) setSearchLoading(false);
     }
-  }, [search, store?.commerceRules?.sortProductsByNewest]);
+  }, [store?.commerceRules?.sortProductsByNewest]);
 
   const storeIdRef = useRef<string | null>(null);
   const productsRequestIdRef = useRef(0);
@@ -859,14 +861,21 @@ const CatalogView: React.FC = () => {
 
   useEffect(() => {
     if (!store || catalogUnavailableReason) return;
+    let active = true;
     storeIdRef.current = store.id;
     if (!isSearching) {
       setSearchProducts([]);
       setSearchLoaded(false);
+      setSearchLoading(false);
       return;
     }
-    fetchSearchProducts(store.id);
-  }, [store?.id, catalogUnavailableReason, isSearching, fetchSearchProducts]);
+    // Filtering still follows every keystroke locally. Only the initial read waits.
+    setSearchLoading(true);
+    const timer = window.setTimeout(() => {
+      void fetchSearchProducts(store.id, () => active);
+    }, searchProductsCache.has(store.id) ? 0 : 250);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [store?.id, catalogUnavailableReason, isSearching, search, fetchSearchProducts]);
 
   const fetchFirstPage = useCallback(
     async (storeId: string, categoryId: string) => {
@@ -1011,13 +1020,13 @@ const CatalogView: React.FC = () => {
   useInventorySync(publicSupabase, store?.id, [...products.map((p) => p.id), ...searchProducts.map((p) => p.id),
     ...cart.filter((i) => i.itemType !== "kit").map((i) => i.productId), ...kits.flatMap((k) => k.items.map((i) => i.productId))], (rows) => {
     inventoryRowsRef.current = rows;
-    setProducts((current) => current.map((p) => mergeInventory(p, rows)));
-    setSearchProducts((current) => current.map((p) => mergeInventory(p, rows)));
+    setProducts((current) => mergeInventoryList(current, rows));
+    setSearchProducts((current) => mergeInventoryList(current, rows));
     setProductModal((current) => ({ ...current, product: current.product ? mergeInventory(current.product, rows) : null }));
     if (store) {
-      for (const cache of catalogCache.get(store.id)?.values() ?? []) cache.products = cache.products.map((p) => mergeInventory(p, rows));
+      for (const cache of catalogCache.get(store.id)?.values() ?? []) cache.products = mergeInventoryList(cache.products, rows);
       const cachedSearch = searchProductsCache.get(store.id);
-      if (cachedSearch) searchProductsCache.set(store.id, cachedSearch.map((p) => mergeInventory(p, rows)));
+      if (cachedSearch) searchProductsCache.set(store.id, mergeInventoryList(cachedSearch, rows));
     }
   });
 

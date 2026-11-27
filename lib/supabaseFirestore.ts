@@ -69,6 +69,14 @@ const findLastConstraint = (
   predicate: (constraint: QueryConstraint) => boolean,
 ) => [...constraints].reverse().find(predicate);
 
+// Only omit columns that the corresponding product mapper never reads.
+const PRODUCT_CHILD_COLUMNS: Record<string, string> = {
+  product_images: "id,product_id,url,r2_key",
+  product_videos: "id,product_id,url,r2_key",
+  product_options: "id,product_id,name,values",
+  product_variants: "id,product_id,title,sku,price,stock,option_values",
+};
+
 const selectByForeignKey = async (
   table: string,
   foreignKey: string,
@@ -78,13 +86,19 @@ const selectByForeignKey = async (
 ) => {
   const rows: any[] = [];
   for (const chunk of chunkArray(ids, 100)) {
-    const { data, error } = await executeWithRetry(() => {
-      let request = client.from(table).select("*").in(foreignKey, chunk);
-      if (orderField) request = request.order(orderField);
-      return request;
-    });
-    if (error) throw error;
-    rows.push(...(data ?? []));
+    const columns = PRODUCT_CHILD_COLUMNS[table];
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await executeWithRetry(() => {
+        let request = client.from(table).select(columns ?? "*").in(foreignKey, chunk);
+        if (orderField) request = request.order(orderField);
+        if (columns) request = request.order("id").range(from, from + 999);
+        return request;
+      });
+      if (error) throw error;
+      rows.push(...(data ?? []));
+      // Product children can exceed the response limit even for 100 parents.
+      if (!columns || (data ?? []).length < 1000) break;
+    }
   }
   return rows;
 };

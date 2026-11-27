@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState, useRef, useCallback } from "react"
 import StockEditor from "@/components/admin/StockEditor";
 import ImportProgress, { initialImportStatus, type ImportStatus } from "@/components/admin/ImportProgress";
 import { availableStock, exportInventoryFields, inventorySnapshot, parseInventoryFields, parseStock } from "@/helpers/inventory";
-import { mergeInventory, useInventorySync } from "@/hooks/useInventorySync";
+import { mergeInventoryList, useInventorySync } from "@/hooks/useInventorySync";
 import {
   collection,
   addDoc,
@@ -37,6 +37,7 @@ import { getPlanLimitMessage } from "@/helpers/planLimits";
 import { getErrorMessage } from "@/helpers/errorMessage";
 import { useSubscriptionAccess } from "@/hooks/useSubscriptionAccess";
 import { getCatalogShareUrl } from "@/helpers/catalogLinks";
+import { AsyncReadCache } from "@/lib/asyncReadCache";
 
 import {
   DndContext,
@@ -158,7 +159,7 @@ type PageCache = {
 };
 let pageCache: PageCache | null = null;
 
-const allProductsCache = new Map<string, Product[]>();
+const allProductsCache = new AsyncReadCache<string, Product[]>();
 
 type SortableProductCardProps = {
   prod: Product;
@@ -333,11 +334,16 @@ const ProductsView: React.FC = () => {
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [allLoaded, setAllLoaded] = useState(false);
   useInventorySync(supabase, storeId, [...products, ...allProducts, ...searchResults].map((p) => p.id), (rows) => {
-    setProducts((current) => current.map((p) => mergeInventory(p, rows)));
-    setAllProducts((current) => current.map((p) => mergeInventory(p, rows)));
-    setSearchResults((current) => current.map((p) => mergeInventory(p, rows)));
-    if (storeId) allProductsCache.delete(storeId);
-    pageCache = null;
+    setProducts((current) => mergeInventoryList(current, rows));
+    setAllProducts((current) => mergeInventoryList(current, rows));
+    setSearchResults((current) => mergeInventoryList(current, rows));
+    if (storeId) {
+      const cached = allProductsCache.get(storeId);
+      if (cached) allProductsCache.set(storeId, mergeInventoryList(cached, rows));
+      if (pageCache?.storeId === storeId) {
+        pageCache = { ...pageCache, products: mergeInventoryList(pageCache.products, rows) };
+      }
+    }
   }, false);
 
   const importJsonRef = useRef<HTMLInputElement | null>(null);
@@ -472,10 +478,13 @@ const ProductsView: React.FC = () => {
     }
     setSearching(true);
     try {
-      const snap = await getDocs(prodsRef);
-      const all = sortProductsForAdmin(snap.docs.map(mapDocToProduct));
-      allProductsCache.set(storeId, all);
-      setAllProducts(all);
+      await allProductsCache.getOrLoad(storeId, async () => {
+        const snap = await getDocs(prodsRef);
+        return sortProductsForAdmin(snap.docs.map(mapDocToProduct));
+      });
+      const currentProducts = allProductsCache.get(storeId);
+      if (!currentProducts) return;
+      setAllProducts(currentProducts);
       setAllLoaded(true);
     } catch (e) {
       console.error(e);

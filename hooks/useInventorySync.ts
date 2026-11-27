@@ -5,8 +5,15 @@ export type InventoryRows = Map<string, { stock: number; trackStock: boolean; va
 export function mergeInventory<T extends { id: string; stock?: number; trackStock?: boolean; variants?: { id: string; stock?: number }[] }>(product: T, rows: InventoryRows): T {
   const inventory = rows.get(product.id);
   if (!inventory) return product;
+  if (product.stock === inventory.stock && product.trackStock === inventory.trackStock &&
+    (product.variants ?? []).every((variant) => variant.stock === (inventory.variants.get(variant.id) ?? 0))) return product;
   return { ...product, stock: inventory.stock, trackStock: inventory.trackStock,
     variants: product.variants?.map((variant) => ({ ...variant, stock: inventory.variants.get(variant.id) ?? 0 })) };
+}
+
+export function mergeInventoryList<T extends Parameters<typeof mergeInventory>[0]>(products: T[], rows: InventoryRows): T[] {
+  const merged = products.map((product) => mergeInventory(product, rows));
+  return merged.every((product, index) => product === products[index]) ? products : merged;
 }
 
 /** Refresh visible inventory across sessions even when Realtime is not enabled on the project. */
